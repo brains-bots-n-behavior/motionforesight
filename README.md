@@ -14,7 +14,12 @@ future-3d-scene-flow/
 ├── scripts/
 │   ├── build_action100m_segment_viewer.py
 │   ├── build_action100m_viewer.py
+│   ├── build_action100m_mask_trace_viewer.py
+│   ├── prepare_action100m_track_lists.py
+│   ├── run_action100m_sam3_first_frame_masks.py
 │   └── run_action100m_trackcraft3r.py
+├── viewer/
+│   └── action100m_projected_tracks_template.html
 └── models/
     └── README.md
 ```
@@ -42,19 +47,28 @@ data/action100m/segments/viewer/index.html
 
 See [data/README.md](data/README.md) for reproduction details.
 
-## Model Direction
+## SAM3 And 3D Tracking
 
-The near-term model pipeline is:
+The near-term local pipeline is:
 
-1. Run depth and camera estimation on each short segment.
-2. Run dense 3D point tracking / scene flow estimation.
-3. Package observed-frame inputs and future-frame 3D motion targets.
-4. Fine-tune or probe video models for future 3D scene flow prediction.
+1. Run SAM3 on the first frame of each Action100M segment, using the segment text as the text prompt.
+2. Select clips with a small number of SAM3 masks, typically 1-3 object masks.
+3. Run Depth Anything 3 and TrackCraft3r on the selected segment clips.
+4. Build a projected 2D HTML viewer from the dense 3D tracks.
+5. Package observed-frame inputs and future-frame 3D motion targets for future scene flow experiments.
 
-External model dependencies expected by the tracking runner:
+This repo assumes the model code is installed separately. The scripts expect these local checkouts by default:
 
+- `../../external/sam3`: SAM3 image model package/checkpoint assets.
 - `../../external/TrackCraft3r`: dense 3D tracking from monocular video plus depth/camera.
 - `../../external/depth-anything-3`: depth and camera preprocessing.
-- `scripts/run_action100m_trackcraft3r.py`: initial runner for Action100M clips/videos.
 
-The current machine session did not expose a working NVIDIA driver through `nvidia-smi`, so the download and HTML data curation steps are complete, while large-scale 3D tracking should be run once GPU access is available.
+Key repo scripts:
+
+- `scripts/run_action100m_sam3_first_frame_masks.py`: runs SAM3 text-prompt masking on segment first frames.
+- `scripts/prepare_action100m_track_lists.py`: creates resumable TrackCraft video-list shards from the SAM3 manifest.
+- `scripts/run_action100m_trackcraft3r.py`: runs DA3 preprocessing, TrackCraft user NPZ creation, and dense tracking.
+- `scripts/build_action100m_mask_trace_viewer.py`: builds the projected HTML track viewer.
+- `viewer/action100m_projected_tracks_template.html`: tracked HTML template used by the projected viewer.
+
+See [data/README.md](data/README.md) for exact commands.

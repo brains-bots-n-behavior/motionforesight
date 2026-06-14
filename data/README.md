@@ -56,7 +56,10 @@ The workflow uses helper scripts included in this repository:
 ```text
 scripts/build_action100m_viewer.py
 scripts/build_action100m_segment_viewer.py
+scripts/run_action100m_sam3_first_frame_masks.py
+scripts/prepare_action100m_track_lists.py
 scripts/run_action100m_trackcraft3r.py
+scripts/build_action100m_mask_trace_viewer.py
 ```
 
 ## Reproducing the Annotation Cache
@@ -234,7 +237,60 @@ data/action100m/segments/segments_manifest.json
 data/action100m/segments/viewer/index.html
 ```
 
-## Preparing for 3D Tracking
+## SAM3 First-Frame Masks
+
+Assuming SAM3 is installed separately and importable from the active Python environment, run SAM3 on the first frame of each segment clip. The script uses each segment's action text as the text prompt.
+
+```bash
+cd /path/to/future-3d-scene-flow
+
+python \
+  scripts/run_action100m_sam3_first_frame_masks.py \
+  --root data/action100m \
+  --sam3-root ../../external/sam3 \
+  --device cuda
+```
+
+This writes:
+
+```text
+data/action100m/sam3_first_frame_masks/
+├── clips/<clip-id>/
+│   ├── first_frame.jpg
+│   ├── overlay.png
+│   ├── mask_00.png
+│   └── summary.json
+├── manifest.json
+└── viewer/index.html
+```
+
+## Preparing 3D Tracking Lists
+
+For the mask-seeded dense tracking pass, create video-list files from the SAM3 manifest. This example selects clips with 1, 2, or 3 SAM3 masks and splits them across two GPU workers:
+
+```bash
+cd /path/to/future-3d-scene-flow
+
+python \
+  scripts/prepare_action100m_track_lists.py \
+  --root data/action100m \
+  --sam-manifest sam3_first_frame_masks/manifest.json \
+  --min-masks 1 \
+  --max-masks 3 \
+  --num-shards 2 \
+  --output-prefix mask_trace32 \
+  --require-clip
+```
+
+This writes ignored local files such as:
+
+```text
+data/action100m/mask_trace32_selected_videos.txt
+data/action100m/mask_trace32_gpu0.txt
+data/action100m/mask_trace32_gpu1.txt
+```
+
+## Running 3D Tracking
 
 Once GPU access is available, run the TrackCraft3r pipeline from the project root:
 
@@ -243,7 +299,18 @@ cd /path/to/future-3d-scene-flow
 
 python \
   scripts/run_action100m_trackcraft3r.py \
-  --root data/action100m
+  --root data/action100m \
+  --preproc-name mask_trace32_preproc \
+  --tracks-name mask_trace32_tracks \
+  --video-list data/action100m/mask_trace32_selected_videos.txt \
+  --trackcraft-root ../../external/TrackCraft3r \
+  --da3-root ../../external/depth-anything-3 \
+  --process-res 336 \
+  --chunk-size 24 \
+  --num-frames 32 \
+  --frame-stride 2 \
+  --device cuda \
+  --keep-going
 ```
 
 This runner performs:
@@ -255,11 +322,78 @@ This runner performs:
 Outputs are written to:
 
 ```text
-data/action100m/preproc/
-data/action100m/tracks/
+data/action100m/mask_trace32_preproc/
+data/action100m/mask_trace32_tracks/
 ```
 
-The current machine session could not access the NVIDIA driver via `nvidia-smi`, so this step should be run in a GPU-visible environment.
+For two GPUs, run two shells with explicit CUDA visibility. UUIDs are safer than device indices on machines where CUDA order is surprising:
+
+```bash
+python scripts/run_action100m_trackcraft3r.py \
+  --root data/action100m \
+  --preproc-name mask_trace32_preproc \
+  --tracks-name mask_trace32_tracks \
+  --video-list data/action100m/mask_trace32_gpu0.txt \
+  --cuda-visible-devices GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --process-res 336 \
+  --chunk-size 24 \
+  --num-frames 32 \
+  --frame-stride 2 \
+  --device cuda \
+  --keep-going
+
+python scripts/run_action100m_trackcraft3r.py \
+  --root data/action100m \
+  --preproc-name mask_trace32_preproc \
+  --tracks-name mask_trace32_tracks \
+  --video-list data/action100m/mask_trace32_gpu1.txt \
+  --cuda-visible-devices GPU-yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy \
+  --process-res 336 \
+  --chunk-size 24 \
+  --num-frames 32 \
+  --frame-stride 2 \
+  --device cuda \
+  --keep-going
+```
+
+The runner is resumable:
+
+- Existing `depth.npy` files are skipped.
+- Existing `*_user.npz` files are skipped.
+- Existing `*_dense.npz` files are skipped.
+- `--keep-going` records clip-level failures and continues with later clips.
+
+## Projected 3D Track Viewer
+
+Build a local HTML viewer for the dense tracks:
+
+```bash
+cd /path/to/future-3d-scene-flow
+
+python \
+  scripts/build_action100m_mask_trace_viewer.py \
+  --root data/action100m \
+  --tracks-name mask_trace32_tracks \
+  --viewer-name mask_trace32_viewer \
+  --frame-stride 2 \
+  --copy-json
+```
+
+Open:
+
+```text
+data/action100m/mask_trace32_viewer/index.html
+```
+
+The projected viewer is different from the raw segment viewer: it draws mask-grid tracks on TrackCraft's sampled model RGB frames and projects each 3D track point into the corresponding camera frame. This avoids mixing original-video playback coordinates with TrackCraft model-space trajectories.
+
+The tracked HTML template is:
+
+```text
+viewer/action100m_projected_tracks_template.html
+```
+
+These commands should be run in an environment where the external model checkouts, checkpoints, and CUDA runtime are available.
 
 ## Data Notes
 
