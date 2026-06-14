@@ -2,20 +2,20 @@
 
 This folder documents how to reproduce the local Action100M preview video and segment-clip browser used for future 3D scene flow experiments.
 
-The generated media is intentionally kept outside this project folder, under the main OpenTouch workspace:
+Generated media is kept locally under this folder but ignored by git:
 
 ```text
-/home/homanga/opentouch/videos/cogsci/action100m/
+data/action100m/
 ```
 
-This keeps the project repository light while still making the local data path explicit.
+This keeps the repository light while making the local data path explicit and reproducible.
 
 ## Resulting Local Layout
 
 After running the workflow, the data directory in the main workspace should look like:
 
 ```text
-videos/cogsci/action100m/
+data/action100m/
 ├── annotations/              # Cached Action100M rows, one JSON per video UID
 ├── raw/                      # Downloaded YouTube source videos and metadata
 ├── segments/
@@ -30,7 +30,7 @@ videos/cogsci/action100m/
 The current curated segment viewer is:
 
 ```text
-videos/cogsci/action100m/segments/viewer/index.html
+data/action100m/segments/viewer/index.html
 ```
 
 Current verified state:
@@ -41,21 +41,17 @@ Current verified state:
 
 ## Dependencies
 
-Use the existing `opentouch` conda environment:
+Use any Python environment with the required packages:
 
 ```bash
-/home/homanga/miniconda3/envs/opentouch/bin/python -m pip install yt-dlp datasets pyarrow huggingface_hub
+python -m pip install yt-dlp datasets pyarrow huggingface_hub
 ```
 
-The local environment already provides ffmpeg at:
-
-```text
-/home/homanga/miniconda3/envs/opentouch/bin/ffmpeg
-```
+`ffmpeg` must be available on `PATH`, or passed to the segment builder with `--ffmpeg`.
 
 ## Helper Scripts
 
-The workflow uses helper scripts in the main OpenTouch repository:
+The workflow uses helper scripts included in this repository:
 
 ```text
 scripts/build_action100m_viewer.py
@@ -70,14 +66,14 @@ Action100M preview stores YouTube video IDs and hierarchical segment annotations
 Example pattern used to fetch and cache selected rows:
 
 ```bash
-cd /home/homanga/opentouch
+cd /path/to/future-3d-scene-flow
 
-/home/homanga/miniconda3/envs/opentouch/bin/python - <<'PY'
+python - <<'PY'
 import json
 from pathlib import Path
 from datasets import load_dataset
 
-root = Path("videos/cogsci/action100m")
+root = Path("data/action100m")
 root.mkdir(parents=True, exist_ok=True)
 (root / "annotations").mkdir(exist_ok=True)
 
@@ -151,13 +147,13 @@ Note: in this environment, the Hugging Face streaming reader sometimes crashed d
 Build a batch file from `selected_videos.json` for selected videos missing from `raw/`:
 
 ```bash
-cd /home/homanga/opentouch
+cd /path/to/future-3d-scene-flow
 
-/home/homanga/miniconda3/envs/opentouch/bin/python - <<'PY'
+python - <<'PY'
 import json
 from pathlib import Path
 
-root = Path("videos/cogsci/action100m")
+root = Path("data/action100m")
 raw = {p.stem for p in (root / "raw").glob("*.mp4") if ".f" not in p.stem}
 missing = [
     row["video_uid"]
@@ -165,7 +161,7 @@ missing = [
     if row["video_uid"] not in raw
 ]
 
-Path("/tmp/action100m_missing_urls.txt").write_text(
+Path("data/action100m_missing_urls.txt").write_text(
     "\n".join(f"https://www.youtube.com/watch?v={uid}" for uid in missing) + "\n"
 )
 print("wrote", len(missing), "urls")
@@ -175,18 +171,17 @@ PY
 Download modest-resolution source MP4s:
 
 ```bash
-cd /home/homanga/opentouch
+cd /path/to/future-3d-scene-flow
 
-/home/homanga/miniconda3/envs/opentouch/bin/yt-dlp \
+yt-dlp \
   --ignore-errors \
   --no-playlist \
   --write-info-json \
   --write-thumbnail \
-  --ffmpeg-location /home/homanga/miniconda3/envs/opentouch/bin \
   --merge-output-format mp4 \
   -f "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/b[height<=480]" \
-  -o "videos/cogsci/action100m/raw/%(id)s.%(ext)s" \
-  --batch-file /tmp/action100m_missing_urls.txt
+  -o "data/action100m/raw/%(id)s.%(ext)s" \
+  --batch-file data/action100m_missing_urls.txt
 ```
 
 Some Action100M YouTube IDs may be unavailable, private, or return unusably tiny files. The segment builder below skips missing files and MP4s smaller than 1 MB.
@@ -196,17 +191,17 @@ Some Action100M YouTube IDs may be unavailable, private, or return unusably tiny
 Create a grid UI for the downloaded full videos:
 
 ```bash
-cd /home/homanga/opentouch
+cd /path/to/future-3d-scene-flow
 
-/home/homanga/miniconda3/envs/opentouch/bin/python \
+python \
   scripts/build_action100m_viewer.py \
-  --root videos/cogsci/action100m
+  --root data/action100m
 ```
 
 Open:
 
 ```text
-videos/cogsci/action100m/viewer/index.html
+data/action100m/viewer/index.html
 ```
 
 ## Segmented Clip HTML UI
@@ -214,11 +209,11 @@ videos/cogsci/action100m/viewer/index.html
 Create mid-level segment clips and a segment-grid UI:
 
 ```bash
-cd /home/homanga/opentouch
+cd /path/to/future-3d-scene-flow
 
-/home/homanga/miniconda3/envs/opentouch/bin/python \
+python \
   scripts/build_action100m_segment_viewer.py \
-  --root videos/cogsci/action100m \
+  --root data/action100m \
   --per-video 15 \
   --exclude-video-uid=-M6cLOV4aW8
 ```
@@ -226,7 +221,7 @@ cd /home/homanga/opentouch
 Open:
 
 ```text
-videos/cogsci/action100m/segments/viewer/index.html
+data/action100m/segments/viewer/index.html
 ```
 
 The `--exclude-video-uid=-M6cLOV4aW8` flag removes the PHD2/PHP-looking software tutorial clips from the viewer.
@@ -234,21 +229,21 @@ The `--exclude-video-uid=-M6cLOV4aW8` flag removes the PHD2/PHP-looking software
 The segment builder writes:
 
 ```text
-videos/cogsci/action100m/segments/clips/*.mp4
-videos/cogsci/action100m/segments/segments_manifest.json
-videos/cogsci/action100m/segments/viewer/index.html
+data/action100m/segments/clips/*.mp4
+data/action100m/segments/segments_manifest.json
+data/action100m/segments/viewer/index.html
 ```
 
 ## Preparing for 3D Tracking
 
-Once GPU access is available, run the TrackCraft3r pipeline from the main workspace:
+Once GPU access is available, run the TrackCraft3r pipeline from the project root:
 
 ```bash
-cd /home/homanga/opentouch
+cd /path/to/future-3d-scene-flow
 
-/home/homanga/miniconda3/envs/opentouch/bin/python \
+python \
   scripts/run_action100m_trackcraft3r.py \
-  --root videos/cogsci/action100m
+  --root data/action100m
 ```
 
 This runner performs:
@@ -260,8 +255,8 @@ This runner performs:
 Outputs are written to:
 
 ```text
-videos/cogsci/action100m/preproc/
-videos/cogsci/action100m/tracks/
+data/action100m/preproc/
+data/action100m/tracks/
 ```
 
 The current machine session could not access the NVIDIA driver via `nvidia-smi`, so this step should be run in a GPU-visible environment.

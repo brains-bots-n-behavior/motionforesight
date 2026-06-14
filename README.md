@@ -9,7 +9,12 @@ The working hypothesis is that video foundation models already encode useful pri
 ```text
 future-3d-scene-flow/
 ├── data/
-│   └── README.md
+│   ├── README.md
+│   └── action100m/       # ignored local generated data
+├── scripts/
+│   ├── build_action100m_segment_viewer.py
+│   ├── build_action100m_viewer.py
+│   └── run_action100m_trackcraft3r.py
 └── models/
     └── README.md
 ```
@@ -26,13 +31,13 @@ The first data source is the Action100M preview split. Action100M provides YouTu
 The local working copy produced so far lives under:
 
 ```text
-/home/homanga/opentouch/videos/cogsci/action100m/
+data/action100m/
 ```
 
 The segment viewer currently contains hundreds of short mid-level clips:
 
 ```text
-/home/homanga/opentouch/videos/cogsci/action100m/segments/viewer/index.html
+data/action100m/segments/viewer/index.html
 ```
 
 See [data/README.md](data/README.md) for reproduction details.
@@ -46,10 +51,10 @@ The near-term model pipeline is:
 3. Package observed-frame inputs and future-frame 3D motion targets.
 4. Fine-tune or probe video models for future 3D scene flow prediction.
 
-Existing local dependencies that are relevant:
+External model dependencies expected by the tracking runner:
 
-- `external/TrackCraft3r`: dense 3D tracking from monocular video plus depth/camera.
-- `external/depth-anything-3`: depth and camera preprocessing.
+- `../../external/TrackCraft3r`: dense 3D tracking from monocular video plus depth/camera.
+- `../../external/depth-anything-3`: depth and camera preprocessing.
 - `scripts/run_action100m_trackcraft3r.py`: initial runner for Action100M clips/videos.
 
 The current machine session did not expose a working NVIDIA driver through `nvidia-smi`, so the download and HTML data curation steps are complete, while large-scale 3D tracking should be run once GPU access is available.
