@@ -1,18 +1,63 @@
 # Data
 
-This folder documents how to reproduce the local Action100M preview video and segment-clip browser used for future 3D scene flow experiments.
+This folder documents the local video-data recipes used for future 3D scene-flow experiments. Generated media, model outputs, masks, and local HTML viewers live under `data/` but are ignored by git.
 
-Generated media is kept locally under this folder but ignored by git:
+Ignored local data roots:
 
 ```text
 data/action100m/
+data/something_something/
 ```
 
-This keeps the repository light while making the local data path explicit and reproducible.
+The repo stores the scripts and reproducibility notes; the large downloaded videos and model outputs stay local.
 
-## Resulting Local Layout
+## Shared Dependencies
 
-After running the workflow, the data directory in the main workspace should look like:
+Use an environment with the basic data tooling:
+
+```bash
+python -m pip install yt-dlp datasets pyarrow huggingface_hub opencv-python pillow numpy
+```
+
+External model code/checkpoints are assumed to be installed separately:
+
+```text
+../../external/sam3
+../../external/TrackCraft3r
+../../external/depth-anything-3
+```
+
+The SAM3 and TrackCraft3r steps require CUDA. If running inside a restricted shell, check that PyTorch can see the GPUs, not only `nvidia-smi`:
+
+```bash
+python - <<'PY'
+import torch
+print(torch.cuda.is_available(), torch.cuda.device_count())
+PY
+```
+
+## Helper Scripts
+
+Relevant helper scripts in this repo:
+
+```text
+scripts/build_action100m_viewer.py
+scripts/build_action100m_segment_viewer.py
+scripts/run_action100m_sam3_first_frame_masks.py
+scripts/prepare_action100m_track_lists.py
+scripts/run_action100m_trackcraft3r.py
+scripts/build_action100m_mask_trace_viewer.py
+scripts/run_something_sam3_anchor_masks.py
+scripts/run_something_anchor_tracking_test.sh
+```
+
+`scripts/run_action100m_trackcraft3r.py` is dataset-agnostic despite the historical name: it can run TrackCraft3r on any local video list.
+
+## Action100M Workflow
+
+### Local Layout
+
+After running the Action100M workflow, local data should look like:
 
 ```text
 data/action100m/
@@ -23,50 +68,28 @@ data/action100m/
 │   ├── segments_manifest.json
 │   └── viewer/index.html     # Local segment clip grid
 ├── selected_videos.json      # Selected Action100M video IDs
-├── tracks/                   # Reserved for 3D tracking outputs
+├── sam3_first_frame_masks/   # SAM3 masks on segment first frames
+├── mask_trace32_preproc/     # DA3 depth/camera outputs
+├── mask_trace32_tracks/      # TrackCraft user/dense NPZ files
+├── mask_trace32_viewer/      # Projected 3D track HTML viewer
 └── viewer/index.html         # Local full-video grid
 ```
 
-The current curated segment viewer is:
+The curated segment viewer is:
 
 ```text
 data/action100m/segments/viewer/index.html
 ```
 
-Current verified state:
+Current verified local state:
 
-- 509 segment clips in the viewer after excluding the PHD2/PHP-looking source video.
+- 509 segment clips after excluding the PHD2/PHP-looking source video.
 - 35 videos represented in the segment viewer.
 - Segment clips are mid-level Action100M annotations, usually 5-18 seconds.
 
-## Dependencies
+### Cache Annotations
 
-Use any Python environment with the required packages:
-
-```bash
-python -m pip install yt-dlp datasets pyarrow huggingface_hub
-```
-
-`ffmpeg` must be available on `PATH`, or passed to the segment builder with `--ffmpeg`.
-
-## Helper Scripts
-
-The workflow uses helper scripts included in this repository:
-
-```text
-scripts/build_action100m_viewer.py
-scripts/build_action100m_segment_viewer.py
-scripts/run_action100m_sam3_first_frame_masks.py
-scripts/prepare_action100m_track_lists.py
-scripts/run_action100m_trackcraft3r.py
-scripts/build_action100m_mask_trace_viewer.py
-```
-
-## Reproducing the Annotation Cache
-
-Action100M preview stores YouTube video IDs and hierarchical segment annotations in Hugging Face parquet files. The local annotations are cached as JSON so the viewer can be rebuilt without re-querying Hugging Face.
-
-Example pattern used to fetch and cache selected rows:
+Action100M preview stores YouTube video IDs and hierarchical segment annotations in Hugging Face parquet files. Cache selected rows as JSON so the viewer can be rebuilt without re-querying Hugging Face:
 
 ```bash
 cd /path/to/future-3d-scene-flow
@@ -143,11 +166,9 @@ print("total selected", len(selected))
 PY
 ```
 
-Note: in this environment, the Hugging Face streaming reader sometimes crashed during Python shutdown after all files were written. The resulting JSON cache was still valid; verify counts after the command.
+### Download Source Videos
 
-## Downloading Source Videos
-
-Build a batch file from `selected_videos.json` for selected videos missing from `raw/`:
+Build a batch file for selected videos missing from `raw/`:
 
 ```bash
 cd /path/to/future-3d-scene-flow
@@ -171,11 +192,9 @@ print("wrote", len(missing), "urls")
 PY
 ```
 
-Download modest-resolution source MP4s:
+Download modest-resolution MP4s:
 
 ```bash
-cd /path/to/future-3d-scene-flow
-
 yt-dlp \
   --ignore-errors \
   --no-playlist \
@@ -187,17 +206,12 @@ yt-dlp \
   --batch-file data/action100m_missing_urls.txt
 ```
 
-Some Action100M YouTube IDs may be unavailable, private, or return unusably tiny files. The segment builder below skips missing files and MP4s smaller than 1 MB.
+### Build Video Viewers
 
-## Full-Video HTML UI
-
-Create a grid UI for the downloaded full videos:
+Create the full-video grid:
 
 ```bash
-cd /path/to/future-3d-scene-flow
-
-python \
-  scripts/build_action100m_viewer.py \
+python scripts/build_action100m_viewer.py \
   --root data/action100m
 ```
 
@@ -207,15 +221,10 @@ Open:
 data/action100m/viewer/index.html
 ```
 
-## Segmented Clip HTML UI
-
-Create mid-level segment clips and a segment-grid UI:
+Create mid-level segment clips and the segment-grid UI:
 
 ```bash
-cd /path/to/future-3d-scene-flow
-
-python \
-  scripts/build_action100m_segment_viewer.py \
+python scripts/build_action100m_segment_viewer.py \
   --root data/action100m \
   --per-video 15 \
   --exclude-video-uid=-M6cLOV4aW8
@@ -227,31 +236,20 @@ Open:
 data/action100m/segments/viewer/index.html
 ```
 
-The `--exclude-video-uid=-M6cLOV4aW8` flag removes the PHD2/PHP-looking software tutorial clips from the viewer.
+The `--exclude-video-uid=-M6cLOV4aW8` flag removes the PHD2/PHP-looking software tutorial clips.
 
-The segment builder writes:
+### Run SAM3 On Segment First Frames
 
-```text
-data/action100m/segments/clips/*.mp4
-data/action100m/segments/segments_manifest.json
-data/action100m/segments/viewer/index.html
-```
-
-## SAM3 First-Frame Masks
-
-Assuming SAM3 is installed separately and importable from the active Python environment, run SAM3 on the first frame of each segment clip. The script uses each segment's action text as the text prompt.
+Run SAM3 on the first frame of each segment clip. The text prompt is each segment's action text:
 
 ```bash
-cd /path/to/future-3d-scene-flow
-
-python \
-  scripts/run_action100m_sam3_first_frame_masks.py \
+python scripts/run_action100m_sam3_first_frame_masks.py \
   --root data/action100m \
   --sam3-root ../../external/sam3 \
   --device cuda
 ```
 
-This writes:
+Outputs:
 
 ```text
 data/action100m/sam3_first_frame_masks/
@@ -264,15 +262,12 @@ data/action100m/sam3_first_frame_masks/
 └── viewer/index.html
 ```
 
-## Preparing 3D Tracking Lists
+### Prepare Tracking Lists
 
-For the mask-seeded dense tracking pass, create video-list files from the SAM3 manifest. This example selects clips with 1, 2, or 3 SAM3 masks and splits them across two GPU workers:
+Select clips with 1-3 SAM3 masks and split them across two GPU workers:
 
 ```bash
-cd /path/to/future-3d-scene-flow
-
-python \
-  scripts/prepare_action100m_track_lists.py \
+python scripts/prepare_action100m_track_lists.py \
   --root data/action100m \
   --sam-manifest sam3_first_frame_masks/manifest.json \
   --min-masks 1 \
@@ -282,7 +277,7 @@ python \
   --require-clip
 ```
 
-This writes ignored local files such as:
+Outputs:
 
 ```text
 data/action100m/mask_trace32_selected_videos.txt
@@ -290,15 +285,12 @@ data/action100m/mask_trace32_gpu0.txt
 data/action100m/mask_trace32_gpu1.txt
 ```
 
-## Running 3D Tracking
+### Run 3D Tracking
 
-Once GPU access is available, run the TrackCraft3r pipeline from the project root:
+Run Depth Anything 3 preprocessing, TrackCraft user-NPZ creation, and TrackCraft dense tracking:
 
 ```bash
-cd /path/to/future-3d-scene-flow
-
-python \
-  scripts/run_action100m_trackcraft3r.py \
+python scripts/run_action100m_trackcraft3r.py \
   --root data/action100m \
   --preproc-name mask_trace32_preproc \
   --tracks-name mask_trace32_tracks \
@@ -313,20 +305,7 @@ python \
   --keep-going
 ```
 
-This runner performs:
-
-1. Depth/camera preprocessing using Depth Anything 3.
-2. TrackCraft3r-format NPZ creation.
-3. Dense 3D tracking inference.
-
-Outputs are written to:
-
-```text
-data/action100m/mask_trace32_preproc/
-data/action100m/mask_trace32_tracks/
-```
-
-For two GPUs, run two shells with explicit CUDA visibility. UUIDs are safer than device indices on machines where CUDA order is surprising:
+For two GPUs, run two shells with explicit CUDA visibility:
 
 ```bash
 python scripts/run_action100m_trackcraft3r.py \
@@ -356,23 +335,16 @@ python scripts/run_action100m_trackcraft3r.py \
   --keep-going
 ```
 
-The runner is resumable:
+The runner is resumable: existing `depth.npy`, `*_user.npz`, and `*_dense.npz` files are skipped.
 
-- Existing `depth.npy` files are skipped.
-- Existing `*_user.npz` files are skipped.
-- Existing `*_dense.npz` files are skipped.
-- `--keep-going` records clip-level failures and continues with later clips.
+### Build Projected Track Viewer
 
-## Projected 3D Track Viewer
-
-Build a local HTML viewer for the dense tracks:
+Build a local HTML viewer for dense tracks:
 
 ```bash
-cd /path/to/future-3d-scene-flow
-
-python \
-  scripts/build_action100m_mask_trace_viewer.py \
+python scripts/build_action100m_mask_trace_viewer.py \
   --root data/action100m \
+  --sam-manifest sam3_first_frame_masks/manifest.json \
   --tracks-name mask_trace32_tracks \
   --viewer-name mask_trace32_viewer \
   --frame-stride 2 \
@@ -385,19 +357,165 @@ Open:
 data/action100m/mask_trace32_viewer/index.html
 ```
 
-The projected viewer is different from the raw segment viewer: it draws mask-grid tracks on TrackCraft's sampled model RGB frames and projects each 3D track point into the corresponding camera frame. This avoids mixing original-video playback coordinates with TrackCraft model-space trajectories.
+The viewer draws mask-grid tracks on TrackCraft's sampled model RGB frames, not the original video element. For each timestep it projects predicted 3D points into the corresponding estimated camera frame, so the displayed 2D trails include camera-induced image motion. The static SAM3 mask overlay is from the anchor/first frame and is not time-varying.
 
-The tracked HTML template is:
+## Something-Something Workflow
+
+### Local Layout
+
+The Something-Something workflow assumes videos and labels were unpacked under `~/Downloads`:
 
 ```text
-viewer/action100m_projected_tracks_template.html
+~/Downloads/20bn-something-something-v2/<video-id>.webm
+~/Downloads/20bn-something-something-download-package-labels/labels/train.json
 ```
 
-These commands should be run in an environment where the external model checkouts, checkpoints, and CUDA runtime are available.
+Local generated outputs are ignored by git:
+
+```text
+data/something_something/
+├── anchor_clips/             # MP4 clips starting at the selected anchor frame
+├── anchor_selected_videos.txt
+├── anchor_selected_videos_test4.txt
+├── sam3_anchor_masks/
+│   ├── clips/<video-id>_anchor/
+│   ├── manifest.json
+│   └── viewer/index.html
+├── anchor_preproc/           # DA3 depth/camera outputs
+├── anchor_tracks32/          # 32-frame TrackCraft user/dense NPZ files
+└── anchor_track32_viewer/    # Projected 32-frame track viewer
+```
+
+The key idea is to avoid tracking from an uninformative first frame. The script scans each video for the first frame where SAM3 detects a hand, chooses an anchor frame a few frames later, prompts SAM3 on that anchor frame with the object names from `train.json` `placeholders`, and writes a new MP4 starting at the anchor frame.
+
+### Create Anchor Clips And SAM3 Object Masks
+
+Run SAM3 hand detection and object prompting:
+
+```bash
+python scripts/run_something_sam3_anchor_masks.py \
+  --root data/something_something \
+  --video-root ~/Downloads/20bn-something-something-v2 \
+  --labels ~/Downloads/20bn-something-something-download-package-labels/labels/train.json \
+  --sam3-root ../../external/sam3 \
+  --limit 10 \
+  --device cuda \
+  --hand-prompt hand \
+  --scan-step 3 \
+  --anchor-offset 3 \
+  --min-hand-area 150 \
+  --min-frames-after-anchor 20 \
+  --clip-max-frames 48
+```
+
+For each candidate video, the script:
+
+1. Reads the object prompts from `placeholders` in `train.json`.
+2. Scans every `--scan-step` frames with SAM3 prompt `hand`.
+3. Chooses `anchor_frame = first_hand_frame + --anchor-offset`.
+4. Writes `data/something_something/anchor_clips/<id>_anchor.mp4`.
+5. Runs SAM3 on the anchor frame for each object prompt.
+6. Saves object masks as `mask_XX.png` and hand masks as `hand_mask_XX.png`.
+7. Writes `sam3_anchor_masks/manifest.json` and `sam3_anchor_masks/viewer/index.html`.
+8. Writes `anchor_selected_videos.txt` for clips with at least one object mask.
+
+To force specific videos, pass one or more IDs:
+
+```bash
+python scripts/run_something_sam3_anchor_masks.py \
+  --root data/something_something \
+  --video-id 78687 \
+  --video-id 42326 \
+  --device cuda
+```
+
+### Select A Small Test Set
+
+For a 3-4 video test run, select the first four usable anchor clips:
+
+```bash
+head -n 4 \
+  data/something_something/anchor_selected_videos.txt \
+  > data/something_something/anchor_selected_videos_test4.txt
+```
+
+The local test run used:
+
+```text
+78687_anchor.mp4   # potato, vicks vaporub bottle
+42326_anchor.mp4   # margarine, bread
+34899_anchor.mp4   # bulb
+112783_anchor.mp4  # mouthwash, roll on
+```
+
+### Run 32-Frame 3D Tracking
+
+Run TrackCraft3r from the anchor frame for 32 frames at stride 1:
+
+```bash
+python scripts/run_action100m_trackcraft3r.py \
+  --root data/something_something \
+  --preproc-name anchor_preproc \
+  --tracks-name anchor_tracks32 \
+  --video-list data/something_something/anchor_selected_videos_test4.txt \
+  --trackcraft-root ../../external/TrackCraft3r \
+  --da3-root ../../external/depth-anything-3 \
+  --process-res 336 \
+  --chunk-size 24 \
+  --num-frames 32 \
+  --frame-stride 1 \
+  --device cuda \
+  --keep-going
+```
+
+This tracks from each anchor clip's frame 0 through frame 31. In original-video coordinates, that means `anchor_frame` through `anchor_frame + 31`.
+
+### Build The 32-Frame Projected Viewer
+
+Build the HTML viewer over the anchor-frame object masks:
+
+```bash
+python scripts/build_action100m_mask_trace_viewer.py \
+  --root data/something_something \
+  --sam-manifest sam3_anchor_masks/manifest.json \
+  --tracks-name anchor_tracks32 \
+  --viewer-name anchor_track32_viewer \
+  --frame-stride 1 \
+  --copy-json
+```
+
+Open:
+
+```text
+data/something_something/anchor_track32_viewer/index.html
+```
+
+The current viewer uses TrackCraft's sampled RGB frames and projects 3D points into each timestep's estimated camera frame. It also contrast-stretches point colors per clip from blue at the top of the sampled object mask points to red at the bottom.
+
+### One-Command Test
+
+The full 4-video Something-Something test scans 10 candidates by default, selects the first 4 usable anchor clips, runs 32-frame tracking, and rebuilds the viewer:
+
+```bash
+bash scripts/run_something_anchor_tracking_test.sh
+```
+
+Optional environment overrides:
+
+```bash
+SAM3_LIMIT=10 \
+TRACK_LIMIT=4 \
+NUM_FRAMES=32 \
+FRAME_STRIDE=1 \
+TRACKS_NAME=anchor_tracks32 \
+VIEWER_NAME=anchor_track32_viewer \
+bash scripts/run_something_anchor_tracking_test.sh
+```
 
 ## Data Notes
 
 - Action100M annotations are hierarchical. The viewer intentionally uses mid-level clips rather than every node, because many nodes are whole-video spans or sub-second micro-actions.
-- YouTube availability changes over time. The exact set of downloadable videos may differ.
+- Action100M YouTube availability changes over time. The exact set of downloadable videos may differ.
+- Something-Something videos are local `.webm` files; the recipe writes short anchor-starting MP4s for TrackCraft compatibility.
 - The local HTML viewers use relative paths, so they can be opened directly in a browser from the filesystem.
-- Downloaded videos remain subject to the original source availability and licensing constraints.
+- Generated videos and model outputs remain local and are not committed.

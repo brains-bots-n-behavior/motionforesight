@@ -1,4 +1,5 @@
 data/action100m/
+data/something_something/
 data/action100m_missing_urls.txt
 __pycache__/
 *.py[cod]
