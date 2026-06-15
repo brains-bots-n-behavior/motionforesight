@@ -15,7 +15,7 @@ Done by Homanga:
 - [x] Segment Action100M clips into action segments.
 - [x] Generate SAM3 masks of the object in the 10th frame after the first frame where a hand is detected.
 - [x] Run 3D tracking on these clips.
-- [x] Run this pipeline for 200 clips. A 20-clip sample is available here: [Something-Something 20-clip track viewer package](https://livejohnshopkins-my.sharepoint.com/:f:/g/personal/hbharad2_jh_edu/IgCk0uiG1nuHSZ459dxUs_FsAXdK5Q2Y6GD6ulX_oY1FZYo?email=yjangir1%40jh.edu&e=wptieq). View it with the included HTML viewer.
+- [x] Run this pipeline for 200 clips. A local demo video is available at `/home/homanga/Videos/Screencasts/200videos_3dtracks.webm`. A 20-clip sample is available here: [Something-Something 20-clip track viewer package](https://livejohnshopkins-my.sharepoint.com/:f:/g/personal/hbharad2_jh_edu/IgCk0uiG1nuHSZ459dxUs_FsAXdK5Q2Y6GD6ulX_oY1FZYo?email=yjangir1%40jh.edu&e=wptieq). View it with the included HTML viewer.
 
 TODO for Yash:
 
@@ -69,7 +69,7 @@ data/action100m/segments/viewer/index.html
 
 See [data/README.md](data/README.md) for reproduction details.
 
-## Local Demo
+## 200-Clip Demo Video
 
 A local WebM screencast of the 200-video 3D track viewer is available outside the repository:
 
