@@ -11,13 +11,7 @@ data/something_something/
 
 The repo stores the scripts and reproducibility notes; the large downloaded videos and model outputs stay local.
 
-## Shared Dependencies
-
-Use an environment with the basic data tooling:
-
-```bash
-python -m pip install yt-dlp datasets pyarrow huggingface_hub opencv-python pillow numpy
-```
+## Environment Setup
 
 External model code is tracked as git submodules:
 
@@ -27,16 +21,79 @@ external/TrackCraft3r
 external/depth-anything-3
 ```
 
-Initialize them after cloning:
+Fresh clone:
+
+```bash
+git clone --recursive https://github.com/homangab/future-3d-scene-flow.git
+cd future-3d-scene-flow
+```
+
+If you already cloned without submodules:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-Checkpoint and model-cache downloads are still handled by the individual projects/environments. If SAM3 raises PyTorch dtype or `init_state` keyword compatibility errors, apply the local compatibility patch:
+Create the fresh conda environment used for the local Something-Something tracking runs:
+
+```bash
+. /home/homanga/miniconda3/etc/profile.d/conda.sh  # skip if conda is already initialized
+
+conda create -y -n 3dflow python=3.10 pip
+conda activate 3dflow
+
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install --index-url https://download.pytorch.org/whl/cu130 \
+  torch==2.11.0 torchvision==0.26.0 xformers==0.0.35
+
+python -m pip install -e external/sam3 -e external/depth-anything-3
+python -m pip install --no-build-isolation -e external/TrackCraft3r
+
+python -m pip install \
+  datasets pyarrow yt-dlp huggingface_hub \
+  pycocotools numba python-rapidjson
+
+python -m pip install --force-reinstall \
+  numpy==1.26.4 \
+  opencv-python==4.10.0.84 \
+  opencv-python-headless==4.10.0.84
+```
+
+The NumPy/OpenCV pins avoid binary-ABI mismatches with the current SAM3, DA3, and TrackCraft3r stack. If SAM3 raises PyTorch dtype or `init_state` keyword compatibility errors, apply the local compatibility patch:
 
 ```bash
 git -C external/sam3 apply ../../patches/sam3_pytorch_compat.patch
+```
+
+### Local Model Files
+
+This setup installs packages only; it should reuse model files that are already on disk.
+
+TrackCraft3r expects its checkpoint and Wan model cache under `external/TrackCraft3r/checkpoints`. Symlink that path to the existing local checkpoint directory:
+
+```bash
+export TRACKCRAFT_CHECKPOINTS=/path/to/local/TrackCraft3r/checkpoints
+test -f "$TRACKCRAFT_CHECKPOINTS/trackcraft3r/model.safetensors"
+test -d "$TRACKCRAFT_CHECKPOINTS/wan_models"
+
+if [ ! -e external/TrackCraft3r/checkpoints ]; then
+  ln -s "$TRACKCRAFT_CHECKPOINTS" external/TrackCraft3r/checkpoints
+fi
+```
+
+SAM3 and Depth Anything 3 can use their existing Hugging Face cache entries. To prevent any hidden model downloads during a run, export offline mode after confirming the cache is present:
+
+```bash
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+```
+
+If you prefer to pin SAM3 explicitly, pass a local checkpoint path to the SAM3 scripts:
+
+```bash
+python scripts/run_something_sam3_anchor_masks.py \
+  --checkpoint ~/.cache/huggingface/hub/models--facebook--sam3/snapshots/<snapshot>/sam3.pt \
+  --device cuda
 ```
 
 The SAM3 and TrackCraft3r steps require CUDA. If running inside a restricted shell, check that PyTorch can see the GPUs, not only `nvidia-smi`:
@@ -45,6 +102,28 @@ The SAM3 and TrackCraft3r steps require CUDA. If running inside a restricted she
 python - <<'PY'
 import torch
 print(torch.cuda.is_available(), torch.cuda.device_count())
+PY
+```
+
+Verify the installed Python stack:
+
+```bash
+python -m pip check
+
+python - <<'PY'
+import cv2, numpy, sam3, torch, torchvision
+from depth_anything_3.api import DepthAnything3
+
+print("torch", torch.__version__, "cuda", torch.version.cuda)
+print("torchvision", torchvision.__version__)
+print("cuda available", torch.cuda.is_available(), "devices", torch.cuda.device_count())
+print("numpy", numpy.__version__, "opencv", cv2.__version__)
+print("imports ok")
+PY
+
+PYTHONPATH=external/TrackCraft3r:$PYTHONPATH python - <<'PY'
+from evaluation.wan_scene_flow_predictor import WanSceneFlowPredictor
+print("trackcraft imports ok")
 PY
 ```
 

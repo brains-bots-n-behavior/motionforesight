@@ -53,6 +53,96 @@ future-3d-scene-flow/
     └── README.md
 ```
 
+## Environment Setup
+
+Use the `3dflow` conda environment for SAM3 masking, Depth Anything 3 preprocessing, and TrackCraft3r dense tracking.
+
+Fresh clone:
+
+```bash
+git clone --recursive https://github.com/homangab/future-3d-scene-flow.git
+cd future-3d-scene-flow
+```
+
+If you already cloned without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+Create and install the environment from the repository root:
+
+```bash
+. /home/homanga/miniconda3/etc/profile.d/conda.sh  # skip if conda is already initialized
+
+conda create -y -n 3dflow python=3.10 pip
+conda activate 3dflow
+
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install --index-url https://download.pytorch.org/whl/cu130 \
+  torch==2.11.0 torchvision==0.26.0 xformers==0.0.35
+
+python -m pip install -e external/sam3 -e external/depth-anything-3
+python -m pip install --no-build-isolation -e external/TrackCraft3r
+
+python -m pip install \
+  datasets pyarrow yt-dlp huggingface_hub \
+  pycocotools numba python-rapidjson
+
+python -m pip install --force-reinstall \
+  numpy==1.26.4 \
+  opencv-python==4.10.0.84 \
+  opencv-python-headless==4.10.0.84
+```
+
+Apply the local SAM3 compatibility patch after the submodule checkout:
+
+```bash
+git -C external/sam3 apply ../../patches/sam3_pytorch_compat.patch
+```
+
+Do not re-download model weights if they already exist locally. Point TrackCraft3r at the existing local checkpoint directory:
+
+```bash
+export TRACKCRAFT_CHECKPOINTS=/path/to/local/TrackCraft3r/checkpoints
+test -f "$TRACKCRAFT_CHECKPOINTS/trackcraft3r/model.safetensors"
+test -d "$TRACKCRAFT_CHECKPOINTS/wan_models"
+
+if [ ! -e external/TrackCraft3r/checkpoints ]; then
+  ln -s "$TRACKCRAFT_CHECKPOINTS" external/TrackCraft3r/checkpoints
+fi
+```
+
+SAM3 and Depth Anything 3 use the local Hugging Face cache when their model files are already present. To make accidental downloads fail loudly, set:
+
+```bash
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+```
+
+Check the environment:
+
+```bash
+python -m pip check
+
+python - <<'PY'
+import cv2, numpy, sam3, torch, torchvision
+from depth_anything_3.api import DepthAnything3
+
+print("torch", torch.__version__, "cuda", torch.version.cuda)
+print("torchvision", torchvision.__version__)
+print("cuda available", torch.cuda.is_available(), "devices", torch.cuda.device_count())
+print("numpy", numpy.__version__, "opencv", cv2.__version__)
+print("imports ok")
+PY
+
+python scripts/run_something_sam3_anchor_masks.py --help
+python scripts/run_action100m_trackcraft3r.py --help
+python scripts/run_trackcraft3r_dense_batch.py --help
+```
+
+See [data/README.md](data/README.md) for the Something-Something scaling recipe.
+
 ## Data Direction
 
 The first data source is the Action100M preview split. Action100M provides YouTube video IDs plus a hierarchy of temporal action segments. The current local workflow:
