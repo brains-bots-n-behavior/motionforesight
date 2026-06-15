@@ -43,6 +43,7 @@ future-3d-scene-flow/
 ├── viewer/
 │   └── action100m_projected_tracks_template.html
 ├── media/
+│   ├── 200videos_3dtracks.gif
 │   └── 200videos_3dtracks.webm
 └── models/
     └── README.md
@@ -73,11 +74,11 @@ See [data/README.md](data/README.md) for reproduction details.
 
 ## 200-Clip Demo Video
 
-A WebM screencast of the 200-video 3D track viewer:
+A GIF preview of the 200-video 3D track viewer:
 
-<video src="media/200videos_3dtracks.webm" controls width="100%"></video>
+[![200-video 3D track viewer demo](media/200videos_3dtracks.gif)](media/200videos_3dtracks.webm)
 
-[Open the demo video directly](media/200videos_3dtracks.webm).
+[Open the higher-quality WebM directly](media/200videos_3dtracks.webm).
 
 ## SAM3 And 3D Tracking
 
