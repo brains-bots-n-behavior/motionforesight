@@ -63,6 +63,11 @@ def main() -> None:
         action="store_true",
         help="Continue with later videos if one preprocessing or tracking command fails.",
     )
+    parser.add_argument(
+        "--skip-dense",
+        action="store_true",
+        help="Only run DA3 preprocessing and user-NPZ creation; skip dense TrackCraft inference.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -158,6 +163,10 @@ def main() -> None:
                     env=env,
                     dry_run=args.dry_run,
                 )
+
+            if args.skip_dense:
+                print(f"\nready user npz: {user_npz}")
+                continue
 
             if not dense_npz.exists():
                 _run(

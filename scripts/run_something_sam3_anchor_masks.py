@@ -57,7 +57,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--min-hand-area", type=int, default=150)
     p.add_argument("--min-frames-after-anchor", type=int, default=20)
     p.add_argument("--clip-max-frames", type=int, default=48)
-    p.add_argument("--limit", type=int, default=4)
+    p.add_argument("--limit", type=int, default=4, help="Maximum candidate videos to scan. Use 0 for all.")
+    p.add_argument("--start-index", type=int, default=0, help="Skip this many matching candidates before processing.")
+    p.add_argument("--num-shards", type=int, default=1, help="Split matching candidates into this many shards.")
+    p.add_argument("--shard-index", type=int, default=0, help="Process only this shard index.")
+    p.add_argument("--manifest-name", default="manifest.json")
+    p.add_argument("--selected-list-name", default="anchor_selected_videos.txt")
+    p.add_argument("--no-viewer", action="store_true", help="Skip writing the HTML mask viewer.")
     p.add_argument("--video-id", action="append", default=[])
     p.add_argument("--force", action="store_true")
     return p.parse_args()
@@ -174,9 +180,23 @@ def write_anchor_clip(src: Path, dst: Path, start_frame: int, max_frames: int, f
     return count
 
 
-def choose_items(labels: list[dict], video_root: Path, video_ids: list[str], limit: int, min_frames: int) -> list[dict]:
+def choose_items(
+    labels: list[dict],
+    video_root: Path,
+    video_ids: list[str],
+    limit: int,
+    min_frames: int,
+    start_index: int,
+    num_shards: int,
+    shard_index: int,
+) -> list[dict]:
+    if num_shards < 1:
+        raise ValueError("--num-shards must be >= 1")
+    if not (0 <= shard_index < num_shards):
+        raise ValueError("--shard-index must satisfy 0 <= shard_index < --num-shards")
     wanted = set(video_ids)
     chosen = []
+    match_index = 0
     for item in labels:
         if wanted and item["id"] not in wanted:
             continue
@@ -191,11 +211,18 @@ def choose_items(labels: list[dict], video_root: Path, video_ids: list[str], lim
             continue
         if info["frames"] < min_frames:
             continue
+        if match_index < start_index:
+            match_index += 1
+            continue
+        if not wanted and match_index % num_shards != shard_index:
+            match_index += 1
+            continue
         item = dict(item)
         item["video_path"] = str(video_path)
         item["video_info"] = info
         chosen.append(item)
-        if not wanted and len(chosen) >= limit:
+        match_index += 1
+        if not wanted and limit > 0 and len(chosen) >= limit:
             break
     return chosen
 
@@ -389,6 +416,9 @@ def main() -> None:
         video_ids=args.video_id,
         limit=args.limit,
         min_frames=args.min_frames_after_anchor + args.anchor_offset + 1,
+        start_index=args.start_index,
+        num_shards=args.num_shards,
+        shard_index=args.shard_index,
     )
     if not selected:
         raise SystemExit("no matching Something-Something videos found")
@@ -429,14 +459,17 @@ def main() -> None:
         if summary.get("clip_path") and summary.get("num_instances", 0) > 0:
             selected_list.append(root / summary["clip_path"])
 
-    (out_dir / "manifest.json").write_text(json.dumps(summaries, indent=2))
-    (root / "anchor_selected_videos.txt").write_text(
+    manifest_path = out_dir / args.manifest_name
+    selected_list_path = root / args.selected_list_name
+    manifest_path.write_text(json.dumps(summaries, indent=2))
+    selected_list_path.write_text(
         "".join(f"{path}\n" for path in selected_list)
     )
-    build_viewer(out_dir=out_dir, root=root, summaries=[s for s in summaries if "overlay_path" in s])
-    print(f"wrote {out_dir / 'manifest.json'}")
-    print(f"wrote {out_dir / 'viewer' / 'index.html'}")
-    print(f"wrote {root / 'anchor_selected_videos.txt'} ({len(selected_list)} clips)")
+    if not args.no_viewer:
+        build_viewer(out_dir=out_dir, root=root, summaries=[s for s in summaries if "overlay_path" in s])
+        print(f"wrote {out_dir / 'viewer' / 'index.html'}")
+    print(f"wrote {manifest_path}")
+    print(f"wrote {selected_list_path} ({len(selected_list)} clips)")
 
 
 if __name__ == "__main__":

@@ -48,10 +48,13 @@ scripts/prepare_action100m_track_lists.py
 scripts/run_action100m_trackcraft3r.py
 scripts/build_action100m_mask_trace_viewer.py
 scripts/run_something_sam3_anchor_masks.py
+scripts/prepare_something_track_lists.py
+scripts/run_trackcraft3r_dense_batch.py
 scripts/run_something_anchor_tracking_test.sh
 ```
 
 `scripts/run_action100m_trackcraft3r.py` is dataset-agnostic despite the historical name: it can run TrackCraft3r on any local video list.
+For large runs, use it first with `--skip-dense` to create DA3/user-NPZ files, then use `scripts/run_trackcraft3r_dense_batch.py` to run dense TrackCraft3r while loading the model once per GPU.
 
 ## Action100M Workflow
 
@@ -377,9 +380,13 @@ data/something_something/
 ├── anchor_clips/             # MP4 clips starting at the selected anchor frame
 ├── anchor_selected_videos.txt
 ├── anchor_selected_videos_test4.txt
+├── anchor_selected_videos_track32.txt
+├── anchor_selected_videos_track32_gpu0.txt
+├── anchor_selected_videos_track32_gpu1.txt
 ├── sam3_anchor_masks/
 │   ├── clips/<video-id>_anchor/
 │   ├── manifest.json
+│   ├── manifest_all.json
 │   └── viewer/index.html
 ├── anchor_preproc/           # DA3 depth/camera outputs
 ├── anchor_tracks32/          # 32-frame TrackCraft user/dense NPZ files
@@ -428,6 +435,168 @@ python scripts/run_something_sam3_anchor_masks.py \
   --video-id 42326 \
   --device cuda
 ```
+
+### Scale To All Something-Something Videos
+
+For the full dataset, run SAM3 in shards. `--limit 0` means all matching videos in that shard, and `--no-viewer` avoids rebuilding an HTML page from each worker:
+
+```bash
+mkdir -p data/something_something/logs
+
+python scripts/run_something_sam3_anchor_masks.py \
+  --root data/something_something \
+  --video-root ~/Downloads/20bn-something-something-v2 \
+  --labels ~/Downloads/20bn-something-something-download-package-labels/labels/train.json \
+  --sam3-root ../../external/sam3 \
+  --limit 0 \
+  --num-shards 2 \
+  --shard-index 0 \
+  --manifest-name manifest_shard0.json \
+  --selected-list-name anchor_selected_videos_shard0.txt \
+  --no-viewer \
+  --device cuda \
+  --hand-prompt hand \
+  --scan-step 3 \
+  --anchor-offset 3 \
+  --min-hand-area 150 \
+  --min-frames-after-anchor 20 \
+  --clip-max-frames 48 \
+  > data/something_something/logs/sam3_shard0.log 2>&1
+
+python scripts/run_something_sam3_anchor_masks.py \
+  --root data/something_something \
+  --video-root ~/Downloads/20bn-something-something-v2 \
+  --labels ~/Downloads/20bn-something-something-download-package-labels/labels/train.json \
+  --sam3-root ../../external/sam3 \
+  --limit 0 \
+  --num-shards 2 \
+  --shard-index 1 \
+  --manifest-name manifest_shard1.json \
+  --selected-list-name anchor_selected_videos_shard1.txt \
+  --no-viewer \
+  --device cuda \
+  --hand-prompt hand \
+  --scan-step 3 \
+  --anchor-offset 3 \
+  --min-hand-area 150 \
+  --min-frames-after-anchor 20 \
+  --clip-max-frames 48 \
+  > data/something_something/logs/sam3_shard1.log 2>&1
+```
+
+If using two GPUs, run the two commands in separate shells with `CUDA_VISIBLE_DEVICES=0` and `CUDA_VISIBLE_DEVICES=1`, or set the visible device in the shell before launching each worker.
+
+Merge the shard manifests and write 32-frame trackable lists:
+
+```bash
+python scripts/prepare_something_track_lists.py \
+  --root data/something_something \
+  --manifest-glob "sam3_anchor_masks/manifest_shard*.json" \
+  --merged-manifest sam3_anchor_masks/manifest_all.json \
+  --selected-name anchor_selected_videos_track32.txt \
+  --shard-prefix anchor_selected_videos_track32_gpu \
+  --num-shards 2 \
+  --min-masks 1 \
+  --min-anchor-frames 32
+```
+
+Add `--max-masks 3` if you want the conservative 1-3 mask subset. Leave it unset for all clips with at least one SAM3 object mask and enough post-anchor frames.
+
+Create DA3 preprocessing outputs and TrackCraft user NPZ files. This pass is resumable and skips existing `depth.npy` and `*_user.npz` files:
+
+```bash
+python scripts/run_action100m_trackcraft3r.py \
+  --root data/something_something \
+  --preproc-name anchor_preproc_all \
+  --tracks-name anchor_tracks32_all \
+  --video-list data/something_something/anchor_selected_videos_track32_gpu0.txt \
+  --trackcraft-root ../../external/TrackCraft3r \
+  --da3-root ../../external/depth-anything-3 \
+  --process-res 336 \
+  --chunk-size 24 \
+  --num-frames 32 \
+  --frame-stride 1 \
+  --cuda-visible-devices 0 \
+  --device cuda \
+  --skip-dense \
+  --keep-going \
+  > data/something_something/logs/prep_gpu0.log 2>&1
+
+python scripts/run_action100m_trackcraft3r.py \
+  --root data/something_something \
+  --preproc-name anchor_preproc_all \
+  --tracks-name anchor_tracks32_all \
+  --video-list data/something_something/anchor_selected_videos_track32_gpu1.txt \
+  --trackcraft-root ../../external/TrackCraft3r \
+  --da3-root ../../external/depth-anything-3 \
+  --process-res 336 \
+  --chunk-size 24 \
+  --num-frames 32 \
+  --frame-stride 1 \
+  --cuda-visible-devices 1 \
+  --device cuda \
+  --skip-dense \
+  --keep-going \
+  > data/something_something/logs/prep_gpu1.log 2>&1
+```
+
+Run dense TrackCraft3r in batch mode. This avoids reloading the Wan/TrackCraft model for every clip and skips any existing `*_dense.npz` files:
+
+```bash
+python scripts/run_trackcraft3r_dense_batch.py \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_all \
+  --video-list data/something_something/anchor_selected_videos_track32_gpu0.txt \
+  --trackcraft-root ../../external/TrackCraft3r \
+  --num-frames 32 \
+  --frame-stride 1 \
+  --cuda-visible-devices 0 \
+  --device cuda \
+  --keep-going \
+  > data/something_something/logs/dense_gpu0.log 2>&1
+
+python scripts/run_trackcraft3r_dense_batch.py \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_all \
+  --video-list data/something_something/anchor_selected_videos_track32_gpu1.txt \
+  --trackcraft-root ../../external/TrackCraft3r \
+  --num-frames 32 \
+  --frame-stride 1 \
+  --cuda-visible-devices 1 \
+  --device cuda \
+  --keep-going \
+  > data/something_something/logs/dense_gpu1.log 2>&1
+```
+
+Monitor progress:
+
+```bash
+find data/something_something/anchor_tracks32_all -name '*_dense.npz' | wc -l
+rg -n '^failed:' data/something_something/logs/*.log
+du -sh data/something_something/anchor_tracks32_all
+```
+
+Build the full projected-track viewer:
+
+```bash
+python scripts/build_action100m_mask_trace_viewer.py \
+  --root data/something_something \
+  --sam-manifest sam3_anchor_masks/manifest_all.json \
+  --tracks-name anchor_tracks32_all \
+  --viewer-name anchor_track32_all_viewer \
+  --frame-stride 1 \
+  --max-masks 100 \
+  --min-points 1 \
+  --copy-json
+```
+
+Open:
+
+```text
+data/something_something/anchor_track32_all_viewer/index.html
+```
+
+The 500-candidate pilot produced 201 successful 32-frame dense tracks and about 55 GB of dense NPZ files. A full-dataset run can be multiple TB, so check available disk space before launching dense tracking.
 
 ### Select A Small Test Set
 
