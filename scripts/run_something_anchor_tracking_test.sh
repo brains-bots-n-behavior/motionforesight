@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT="${ROOT:-data/something_something}"
-SAM3_ROOT="${SAM3_ROOT:-../../external/sam3}"
-TRACKCRAFT_ROOT="${TRACKCRAFT_ROOT:-../../external/TrackCraft3r}"
-DA3_ROOT="${DA3_ROOT:-../../external/depth-anything-3}"
+SAM3_ROOT="${SAM3_ROOT:-external/sam3}"
+TRACKCRAFT_ROOT="${TRACKCRAFT_ROOT:-external/TrackCraft3r}"
+DA3_ROOT="${DA3_ROOT:-external/depth-anything-3}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 DEVICE="${DEVICE:-cuda}"
 SAM3_LIMIT="${SAM3_LIMIT:-10}"

@@ -19,12 +19,24 @@ Use an environment with the basic data tooling:
 python -m pip install yt-dlp datasets pyarrow huggingface_hub opencv-python pillow numpy
 ```
 
-External model code/checkpoints are assumed to be installed separately:
+External model code is tracked as git submodules:
 
 ```text
-../../external/sam3
-../../external/TrackCraft3r
-../../external/depth-anything-3
+external/sam3
+external/TrackCraft3r
+external/depth-anything-3
+```
+
+Initialize them after cloning:
+
+```bash
+git submodule update --init --recursive
+```
+
+Checkpoint and model-cache downloads are still handled by the individual projects/environments. If SAM3 raises PyTorch dtype or `init_state` keyword compatibility errors, apply the local compatibility patch:
+
+```bash
+git -C external/sam3 apply ../../patches/sam3_pytorch_compat.patch
 ```
 
 The SAM3 and TrackCraft3r steps require CUDA. If running inside a restricted shell, check that PyTorch can see the GPUs, not only `nvidia-smi`:
@@ -46,6 +58,7 @@ scripts/build_action100m_segment_viewer.py
 scripts/run_action100m_sam3_first_frame_masks.py
 scripts/prepare_action100m_track_lists.py
 scripts/run_action100m_trackcraft3r.py
+scripts/preprocess_da3_chunked.py
 scripts/build_action100m_mask_trace_viewer.py
 scripts/run_something_sam3_anchor_masks.py
 scripts/prepare_something_track_lists.py
@@ -248,7 +261,7 @@ Run SAM3 on the first frame of each segment clip. The text prompt is each segmen
 ```bash
 python scripts/run_action100m_sam3_first_frame_masks.py \
   --root data/action100m \
-  --sam3-root ../../external/sam3 \
+  --sam3-root external/sam3 \
   --device cuda
 ```
 
@@ -298,8 +311,8 @@ python scripts/run_action100m_trackcraft3r.py \
   --preproc-name mask_trace32_preproc \
   --tracks-name mask_trace32_tracks \
   --video-list data/action100m/mask_trace32_selected_videos.txt \
-  --trackcraft-root ../../external/TrackCraft3r \
-  --da3-root ../../external/depth-anything-3 \
+  --trackcraft-root external/TrackCraft3r \
+  --da3-root external/depth-anything-3 \
   --process-res 336 \
   --chunk-size 24 \
   --num-frames 32 \
@@ -404,7 +417,7 @@ python scripts/run_something_sam3_anchor_masks.py \
   --root data/something_something \
   --video-root ~/Downloads/20bn-something-something-v2 \
   --labels ~/Downloads/20bn-something-something-download-package-labels/labels/train.json \
-  --sam3-root ../../external/sam3 \
+  --sam3-root external/sam3 \
   --limit 10 \
   --device cuda \
   --hand-prompt hand \
@@ -447,7 +460,7 @@ python scripts/run_something_sam3_anchor_masks.py \
   --root data/something_something \
   --video-root ~/Downloads/20bn-something-something-v2 \
   --labels ~/Downloads/20bn-something-something-download-package-labels/labels/train.json \
-  --sam3-root ../../external/sam3 \
+  --sam3-root external/sam3 \
   --limit 0 \
   --num-shards 2 \
   --shard-index 0 \
@@ -467,7 +480,7 @@ python scripts/run_something_sam3_anchor_masks.py \
   --root data/something_something \
   --video-root ~/Downloads/20bn-something-something-v2 \
   --labels ~/Downloads/20bn-something-something-download-package-labels/labels/train.json \
-  --sam3-root ../../external/sam3 \
+  --sam3-root external/sam3 \
   --limit 0 \
   --num-shards 2 \
   --shard-index 1 \
@@ -510,8 +523,8 @@ python scripts/run_action100m_trackcraft3r.py \
   --preproc-name anchor_preproc_all \
   --tracks-name anchor_tracks32_all \
   --video-list data/something_something/anchor_selected_videos_track32_gpu0.txt \
-  --trackcraft-root ../../external/TrackCraft3r \
-  --da3-root ../../external/depth-anything-3 \
+  --trackcraft-root external/TrackCraft3r \
+  --da3-root external/depth-anything-3 \
   --process-res 336 \
   --chunk-size 24 \
   --num-frames 32 \
@@ -527,8 +540,8 @@ python scripts/run_action100m_trackcraft3r.py \
   --preproc-name anchor_preproc_all \
   --tracks-name anchor_tracks32_all \
   --video-list data/something_something/anchor_selected_videos_track32_gpu1.txt \
-  --trackcraft-root ../../external/TrackCraft3r \
-  --da3-root ../../external/depth-anything-3 \
+  --trackcraft-root external/TrackCraft3r \
+  --da3-root external/depth-anything-3 \
   --process-res 336 \
   --chunk-size 24 \
   --num-frames 32 \
@@ -547,7 +560,7 @@ python scripts/run_trackcraft3r_dense_batch.py \
   --root data/something_something \
   --tracks-name anchor_tracks32_all \
   --video-list data/something_something/anchor_selected_videos_track32_gpu0.txt \
-  --trackcraft-root ../../external/TrackCraft3r \
+  --trackcraft-root external/TrackCraft3r \
   --num-frames 32 \
   --frame-stride 1 \
   --cuda-visible-devices 0 \
@@ -559,7 +572,7 @@ python scripts/run_trackcraft3r_dense_batch.py \
   --root data/something_something \
   --tracks-name anchor_tracks32_all \
   --video-list data/something_something/anchor_selected_videos_track32_gpu1.txt \
-  --trackcraft-root ../../external/TrackCraft3r \
+  --trackcraft-root external/TrackCraft3r \
   --num-frames 32 \
   --frame-stride 1 \
   --cuda-visible-devices 1 \
@@ -627,8 +640,8 @@ python scripts/run_action100m_trackcraft3r.py \
   --preproc-name anchor_preproc \
   --tracks-name anchor_tracks32 \
   --video-list data/something_something/anchor_selected_videos_test4.txt \
-  --trackcraft-root ../../external/TrackCraft3r \
-  --da3-root ../../external/depth-anything-3 \
+  --trackcraft-root external/TrackCraft3r \
+  --da3-root external/depth-anything-3 \
   --process-res 336 \
   --chunk-size 24 \
   --num-frames 32 \

@@ -25,8 +25,8 @@ def _run(cmd: list[str], cwd: Path, env: dict[str, str], dry_run: bool) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("data/action100m"))
-    parser.add_argument("--trackcraft-root", type=Path, default=Path("../../external/TrackCraft3r"))
-    parser.add_argument("--da3-root", type=Path, default=Path("../../external/depth-anything-3"))
+    parser.add_argument("--trackcraft-root", type=Path, default=Path("external/TrackCraft3r"))
+    parser.add_argument("--da3-root", type=Path, default=Path("external/depth-anything-3"))
     parser.add_argument(
         "--video-glob",
         default=None,
@@ -74,6 +74,7 @@ def main() -> None:
     root = args.root.resolve()
     trackcraft_root = args.trackcraft_root.resolve()
     da3_root = args.da3_root.resolve()
+    repo_scripts = Path(__file__).resolve().parent
     checkpoint = trackcraft_root / "checkpoints" / "trackcraft3r" / "model.safetensors"
     wan_cache = trackcraft_root / "checkpoints" / "wan_models"
 
@@ -120,7 +121,7 @@ def main() -> None:
                 _run(
                     [
                         args.python,
-                        "scripts/preprocess_da3.py",
+                        str(repo_scripts / "preprocess_da3_chunked.py"),
                         "--video_path",
                         str(video),
                         "--output_dir",

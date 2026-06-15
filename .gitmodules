@@ -1,0 +1,9 @@
+[submodule "external/sam3"]
+	path = external/sam3
+	url = https://github.com/facebookresearch/sam3
+[submodule "external/TrackCraft3r"]
+	path = external/TrackCraft3r
+	url = https://github.com/cvlab-kaist/TrackCraft3r
+[submodule "external/depth-anything-3"]
+	path = external/depth-anything-3
+	url = https://github.com/ByteDance-Seed/Depth-Anything-3

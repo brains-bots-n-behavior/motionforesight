@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--sam3-root",
-        default="../../external/sam3",
+        default="external/sam3",
         help="SAM3 checkout, used for the BPE vocab path",
     )
     parser.add_argument("--checkpoint", default=None, help="Optional local SAM3 checkpoint")

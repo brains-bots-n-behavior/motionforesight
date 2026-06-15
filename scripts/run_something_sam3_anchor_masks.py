@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("~/Downloads/20bn-something-something-download-package-labels/labels/train.json"),
     )
-    p.add_argument("--sam3-root", type=Path, default=Path("../../external/sam3"))
+    p.add_argument("--sam3-root", type=Path, default=Path("external/sam3"))
     p.add_argument("--checkpoint", default=None)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--confidence-threshold", type=float, default=0.25)

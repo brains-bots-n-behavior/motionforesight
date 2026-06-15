@@ -72,7 +72,7 @@ def _load_npz_for_predict(path: Path, load_npz_data, num_frames: int, frame_stri
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("data/action100m"))
-    parser.add_argument("--trackcraft-root", type=Path, default=Path("../../external/TrackCraft3r"))
+    parser.add_argument("--trackcraft-root", type=Path, default=Path("external/TrackCraft3r"))
     parser.add_argument("--tracks-name", default="tracks")
     parser.add_argument("--video-list", type=Path, default=None)
     parser.add_argument("--video", action="append", default=[])

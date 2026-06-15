@@ -42,6 +42,10 @@ future-3d-scene-flow/
 │   └── run_trackcraft3r_dense_batch.py
 ├── viewer/
 │   └── action100m_projected_tracks_template.html
+├── external/
+│   ├── sam3/              # git submodule
+│   ├── TrackCraft3r/      # git submodule
+│   └── depth-anything-3/  # git submodule
 ├── media/
 │   ├── 200videos_3dtracks.gif
 │   └── 200videos_3dtracks.webm
@@ -90,17 +94,30 @@ The near-term local pipeline is:
 4. Build a projected 2D HTML viewer from the dense 3D tracks.
 5. Package observed-frame inputs and future-frame 3D motion targets for future scene flow experiments.
 
-This repo assumes the model code is installed separately. The scripts expect these local checkouts by default:
+The model code is tracked as git submodules. After cloning, initialize them with:
 
-- `../../external/sam3`: SAM3 image model package/checkpoint assets.
-- `../../external/TrackCraft3r`: dense 3D tracking from monocular video plus depth/camera.
-- `../../external/depth-anything-3`: depth and camera preprocessing.
+```bash
+git submodule update --init --recursive
+```
+
+The scripts expect these local checkouts by default:
+
+- `external/sam3`: SAM3 image model package/checkpoint assets.
+- `external/TrackCraft3r`: dense 3D tracking from monocular video plus depth/camera.
+- `external/depth-anything-3`: depth and camera preprocessing.
+
+Checkpoint and model-cache downloads are still handled by the individual projects/environments. If SAM3 raises PyTorch dtype or `init_state` keyword compatibility errors, apply the local compatibility patch:
+
+```bash
+git -C external/sam3 apply ../../patches/sam3_pytorch_compat.patch
+```
 
 Key repo scripts:
 
 - `scripts/run_action100m_sam3_first_frame_masks.py`: runs SAM3 text-prompt masking on segment first frames.
 - `scripts/prepare_action100m_track_lists.py`: creates resumable TrackCraft video-list shards from the SAM3 manifest.
 - `scripts/run_action100m_trackcraft3r.py`: runs DA3 preprocessing, TrackCraft user NPZ creation, and dense tracking.
+- `scripts/preprocess_da3_chunked.py`: repo-local DA3 preprocessor with chunked inference for long clips.
 - `scripts/run_something_sam3_anchor_masks.py`: creates Something-Something hand-anchored clips and object masks from `train.json` placeholders.
 - `scripts/prepare_something_track_lists.py`: merges sharded Something-Something SAM3 manifests and writes trackable 32-frame GPU lists.
 - `scripts/run_trackcraft3r_dense_batch.py`: runs TrackCraft3r dense inference over many prepared user NPZs with one model load.
