@@ -144,6 +144,7 @@ scripts/prepare_something_track_lists.py
 scripts/run_trackcraft3r_dense_batch.py
 scripts/run_something_anchor_tracking_test.sh
 scripts/train_future_3d_tracks.py
+scripts/render_future_track_prediction_viewer.py
 ```
 
 `scripts/run_action100m_trackcraft3r.py` is dataset-agnostic despite the historical name: it can run TrackCraft3r on any local video list.
@@ -719,6 +720,33 @@ python scripts/train_future_3d_tracks.py \
 ```
 
 The first local run indexed 201 dense clips, split them into 181 train and 20 validation clips, and wrote `best.pt`, `last.pt`, `epoch_001.pt`, `epoch_002.pt`, and `config.json` under the output directory above. The best validation ADE from this short run was about 5.8 cm over sampled masked points.
+
+To train the text-token AdaLN variant, add `--model-variant text-adaln`. This variant builds a vocabulary from the training labels, encodes text with a small Transformer, and conditions the point-token Transformer through AdaLN-Zero blocks:
+
+```bash
+python scripts/train_future_3d_tracks.py \
+  --model-variant text-adaln \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_500 \
+  --manifest sam3_anchor_masks/manifest_500.json \
+  --output-dir data/something_something/future_track_training/text_adaln_full_10f_to_32f \
+  --obs-frames 10 \
+  --total-frames 32 \
+  --num-points 256 \
+  --image-size 128 224 \
+  --embed-dim 256 \
+  --num-heads 4 \
+  --num-layers 3 \
+  --text-layers 2 \
+  --batch-size 2 \
+  --epochs 20 \
+  --steps-per-epoch 362 \
+  --val-steps 10 \
+  --samples-per-clip 4 \
+  --num-workers 4 \
+  --device cuda \
+  --amp
+```
 
 ### Select A Small Test Set
 

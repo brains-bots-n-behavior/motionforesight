@@ -11,7 +11,8 @@ anchor frame.  The model input is:
 - RGB frames `0..9`.
 - Observed 3D positions for the sampled points at frames `0..9`.
 - Normalized frame-0 UV coordinates for those sampled points.
-- A hashed text vector from the Something-Something label.
+- Text conditioning. The baseline uses a hashed text vector; the `text-adaln`
+  variant uses a trainable token encoder and adaptive layer-norm conditioning.
 
 The target is the future 3D position sequence for frames `10..31`.
 
@@ -33,6 +34,29 @@ python scripts/train_future_3d_tracks.py \
   --device cuda
 ```
 
+Text-conditioned AdaLN variant:
+
+```bash
+python scripts/train_future_3d_tracks.py \
+  --model-variant text-adaln \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_500 \
+  --manifest sam3_anchor_masks/manifest_500.json \
+  --obs-frames 10 \
+  --total-frames 32 \
+  --num-points 256 \
+  --batch-size 2 \
+  --epochs 20 \
+  --steps-per-epoch 362 \
+  --device cuda \
+  --amp
+```
+
+The `text-adaln` architecture follows the practical conditioning pattern from
+DiT-style video/image transformers: encode text to a condition vector, then use
+that vector to produce layer-norm shift, scale, and residual gates inside the
+point-token transformer blocks. This gives stronger text access than simply
+adding a text vector to every point token.
+
 Outputs are written under `data/something_something/future_track_training/`,
 which is ignored by git.
-

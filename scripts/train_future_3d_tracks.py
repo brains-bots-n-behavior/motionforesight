@@ -19,11 +19,16 @@ if str(REPO_ROOT) not in sys.path:
 
 from models.future_3d_tracks.dataset import (  # noqa: E402
     DenseTrackDataset,
+    build_text_vocab,
     build_track_index,
     split_items,
 )
 from models.future_3d_tracks.losses import trajectory_loss, trajectory_metrics  # noqa: E402
 from models.future_3d_tracks.model import FutureTrackPredictor, FutureTrackPredictorConfig  # noqa: E402
+from models.future_3d_tracks.text_adaln_model import (  # noqa: E402
+    TextAdaLNFutureTrackPredictor,
+    TextAdaLNFutureTrackPredictorConfig,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,7 +41,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--total-frames", type=int, default=32)
     parser.add_argument("--num-points", type=int, default=256)
     parser.add_argument("--image-size", type=int, nargs=2, default=(128, 224), metavar=("H", "W"))
+    parser.add_argument("--model-variant", choices=["baseline", "text-adaln"], default="baseline")
     parser.add_argument("--text-dim", type=int, default=256)
+    parser.add_argument("--max-text-tokens", type=int, default=16)
+    parser.add_argument("--max-text-vocab", type=int, default=4096)
+    parser.add_argument("--text-layers", type=int, default=2)
     parser.add_argument("--embed-dim", type=int, default=256)
     parser.add_argument("--num-heads", type=int, default=4)
     parser.add_argument("--num-layers", type=int, default=3)
@@ -67,17 +76,35 @@ def _to_device(batch: dict, device: torch.device) -> dict:
     return out
 
 
+def _model_forward(model: torch.nn.Module, batch: dict, model_variant: str) -> torch.Tensor:
+    if model_variant == "text-adaln":
+        return model(
+            batch["frames"],
+            batch["observed_tracks"],
+            batch["point_uv"],
+            batch["text_tokens"],
+            batch["text_mask"],
+        )
+    return model(
+        batch["frames"],
+        batch["observed_tracks"],
+        batch["point_uv"],
+        batch["text_bow"],
+    )
+
+
 def _mean_dict(dicts: list[dict[str, float]]) -> dict[str, float]:
     keys = dicts[0].keys()
     return {key: float(np.mean([d[key] for d in dicts])) for key in keys}
 
 
 def evaluate(
-    model: FutureTrackPredictor,
+    model: torch.nn.Module,
     loader: DataLoader,
     device: torch.device,
     max_steps: int,
     amp: bool,
+    model_variant: str,
 ) -> dict[str, float]:
     model.eval()
     rows: list[dict[str, float]] = []
@@ -88,12 +115,7 @@ def evaluate(
                 break
             batch = _to_device(batch, device)
             with torch.autocast(device_type=device_type, dtype=torch.bfloat16, enabled=amp and device.type == "cuda"):
-                pred = model(
-                    batch["frames"],
-                    batch["observed_tracks"],
-                    batch["point_uv"],
-                    batch["text_bow"],
-                )
+                pred = _model_forward(model, batch, model_variant)
                 loss = trajectory_loss(pred, batch["future_tracks"], batch["observed_tracks"])
             metrics = trajectory_metrics(pred.float(), batch["future_tracks"], batch["track_scale"])
             metrics["loss"] = float(loss.item())
@@ -128,6 +150,9 @@ def main() -> None:
         raise SystemExit(f"need at least 2 dense clips with masks; found {len(items)}")
     train_items, val_items = split_items(items, args.val_fraction, args.seed)
     print(f"indexed {len(items)} clips: train={len(train_items)} val={len(val_items)}")
+    text_vocab = build_text_vocab(train_items, max_size=args.max_text_vocab) if args.model_variant == "text-adaln" else None
+    if text_vocab is not None:
+        print(f"text vocab size: {len(text_vocab)}")
 
     train_ds = DenseTrackDataset(
         train_items,
@@ -136,6 +161,8 @@ def main() -> None:
         num_points=args.num_points,
         image_size=tuple(args.image_size),
         text_dim=args.text_dim,
+        text_vocab=text_vocab,
+        max_text_tokens=args.max_text_tokens,
         samples_per_clip=args.samples_per_clip,
         seed=args.seed,
     )
@@ -146,6 +173,8 @@ def main() -> None:
         num_points=args.num_points,
         image_size=tuple(args.image_size),
         text_dim=args.text_dim,
+        text_vocab=text_vocab,
+        max_text_tokens=args.max_text_tokens,
         samples_per_clip=1,
         seed=args.seed + 100_000,
     )
@@ -166,16 +195,30 @@ def main() -> None:
         drop_last=False,
     )
 
-    config = FutureTrackPredictorConfig(
-        obs_frames=args.obs_frames,
-        future_frames=args.total_frames - args.obs_frames,
-        text_dim=args.text_dim,
-        embed_dim=args.embed_dim,
-        num_heads=args.num_heads,
-        num_layers=args.num_layers,
-        dropout=args.dropout,
-    )
-    model = FutureTrackPredictor(config).to(device)
+    if args.model_variant == "text-adaln":
+        config = TextAdaLNFutureTrackPredictorConfig(
+            obs_frames=args.obs_frames,
+            future_frames=args.total_frames - args.obs_frames,
+            vocab_size=len(text_vocab or {}),
+            max_text_tokens=args.max_text_tokens,
+            embed_dim=args.embed_dim,
+            num_heads=args.num_heads,
+            num_layers=args.num_layers,
+            text_layers=args.text_layers,
+            dropout=args.dropout,
+        )
+        model = TextAdaLNFutureTrackPredictor(config).to(device)
+    else:
+        config = FutureTrackPredictorConfig(
+            obs_frames=args.obs_frames,
+            future_frames=args.total_frames - args.obs_frames,
+            text_dim=args.text_dim,
+            embed_dim=args.embed_dim,
+            num_heads=args.num_heads,
+            num_layers=args.num_layers,
+            dropout=args.dropout,
+        )
+        model = FutureTrackPredictor(config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     run_config = vars(args).copy()
@@ -183,6 +226,7 @@ def main() -> None:
     run_config["manifest"] = str(args.manifest)
     run_config["output_dir"] = str(output_dir)
     run_config["model"] = model.config_dict
+    run_config["text_vocab"] = text_vocab
     (output_dir / "config.json").write_text(json.dumps(run_config, indent=2))
 
     best_ade = float("inf")
@@ -198,12 +242,7 @@ def main() -> None:
             batch = _to_device(batch, device)
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device_type, dtype=torch.bfloat16, enabled=args.amp and device.type == "cuda"):
-                pred = model(
-                    batch["frames"],
-                    batch["observed_tracks"],
-                    batch["point_uv"],
-                    batch["text_bow"],
-                )
+                pred = _model_forward(model, batch, args.model_variant)
                 loss = trajectory_loss(
                     pred,
                     batch["future_tracks"],
@@ -224,7 +263,7 @@ def main() -> None:
                     f"loss={loss.item():.4f} ade_m={metrics['ade_m']:.4f} fde_m={metrics['fde_m']:.4f}"
                 )
 
-        val_metrics = evaluate(model, val_loader, device, args.val_steps, args.amp)
+        val_metrics = evaluate(model, val_loader, device, args.val_steps, args.amp, args.model_variant)
         train_loss = float(np.mean(losses)) if losses else float("nan")
         elapsed = time.time() - start
         print(
@@ -237,6 +276,8 @@ def main() -> None:
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "config": model.config_dict,
+            "model_variant": args.model_variant,
+            "text_vocab": text_vocab,
             "epoch": epoch,
             "global_step": global_step,
             "val_metrics": val_metrics,
@@ -253,4 +294,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

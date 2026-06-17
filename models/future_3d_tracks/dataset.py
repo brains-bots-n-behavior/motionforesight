@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from collections import Counter
 from typing import Iterable
 
 import cv2
@@ -28,6 +29,53 @@ class TrackSampleIndex:
     dense_path: Path
     mask_paths: tuple[Path, ...]
     text: str = ""
+
+
+TEXT_PAD = "<pad>"
+TEXT_UNK = "<unk>"
+TEXT_CLS = "<cls>"
+TEXT_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def text_tokens(text: str) -> list[str]:
+    return TEXT_TOKEN_RE.findall(text.lower())
+
+
+def build_text_vocab(
+    items: Iterable[TrackSampleIndex],
+    max_size: int = 4096,
+    min_count: int = 1,
+) -> dict[str, int]:
+    """Build a compact word vocabulary from clip labels/prompts."""
+
+    vocab = {TEXT_PAD: 0, TEXT_UNK: 1, TEXT_CLS: 2}
+    counts: Counter[str] = Counter()
+    for item in items:
+        counts.update(text_tokens(item.text))
+    for token, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        if count < min_count:
+            continue
+        if token in vocab:
+            continue
+        if len(vocab) >= max_size:
+            break
+        vocab[token] = len(vocab)
+    return vocab
+
+
+def encode_text(
+    text: str,
+    vocab: dict[str, int],
+    max_tokens: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    ids = [vocab[TEXT_CLS]]
+    ids.extend(vocab.get(token, vocab[TEXT_UNK]) for token in text_tokens(text))
+    ids = ids[:max_tokens]
+    mask = np.zeros(max_tokens, dtype=bool)
+    arr = np.zeros(max_tokens, dtype=np.int64)
+    arr[: len(ids)] = ids
+    mask[: len(ids)] = True
+    return arr, mask
 
 
 def _load_manifest(path: Path | None) -> dict[str, dict]:
@@ -190,6 +238,8 @@ class DenseTrackDataset(Dataset):
         num_points: int = 256,
         image_size: tuple[int, int] = (128, 224),
         text_dim: int = 256,
+        text_vocab: dict[str, int] | None = None,
+        max_text_tokens: int = 16,
         samples_per_clip: int = 1,
         seed: int = 0,
     ) -> None:
@@ -203,6 +253,8 @@ class DenseTrackDataset(Dataset):
         self.num_points = num_points
         self.image_size = image_size
         self.text_dim = text_dim
+        self.text_vocab = text_vocab or build_text_vocab(items)
+        self.max_text_tokens = max_text_tokens
         self.samples_per_clip = max(1, samples_per_clip)
         self.seed = seed
 
@@ -241,6 +293,7 @@ class DenseTrackDataset(Dataset):
             ],
             axis=-1,
         )
+        token_ids, token_mask = encode_text(item.text, self.text_vocab, self.max_text_tokens)
 
         return {
             "frames": _resize_frames(rgb, self.image_size),
@@ -248,9 +301,10 @@ class DenseTrackDataset(Dataset):
             "future_tracks": torch.from_numpy(tracks_norm[:, self.obs_frames : self.total_frames]),
             "point_uv": torch.from_numpy(uv.astype(np.float32)),
             "text_bow": torch.from_numpy(_hash_text(item.text, self.text_dim)),
+            "text_tokens": torch.from_numpy(token_ids),
+            "text_mask": torch.from_numpy(token_mask),
             "track_center": torch.from_numpy(center.astype(np.float32)),
             "track_scale": torch.tensor(scale, dtype=torch.float32),
             "video_id": item.video_id,
             "text": item.text,
         }
-

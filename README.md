@@ -40,6 +40,7 @@ future-3d-scene-flow/
 │   ├── run_action100m_trackcraft3r.py
 │   ├── run_something_sam3_anchor_masks.py
 │   ├── run_trackcraft3r_dense_batch.py
+│   ├── render_future_track_prediction_viewer.py
 │   └── train_future_3d_tracks.py
 ├── viewer/
 │   └── action100m_projected_tracks_template.html
@@ -214,6 +215,7 @@ Key repo scripts:
 - `scripts/prepare_something_track_lists.py`: merges sharded Something-Something SAM3 manifests and writes trackable 32-frame GPU lists.
 - `scripts/run_trackcraft3r_dense_batch.py`: runs TrackCraft3r dense inference over many prepared user NPZs with one model load.
 - `scripts/train_future_3d_tracks.py`: trains the first 10-frame future 3D point-track predictor from curated dense tracks.
+- `scripts/render_future_track_prediction_viewer.py`: renders side-by-side GT/pred future-track overlay videos and HTML viewers.
 - `scripts/build_action100m_mask_trace_viewer.py`: builds the projected HTML track viewer.
 - `viewer/action100m_projected_tracks_template.html`: tracked HTML template used by the projected viewer.
 
@@ -226,7 +228,7 @@ The first trainable baseline lives in `models/future_3d_tracks/`. It reuses the 
 1. RGB frames 0-9.
 2. The sampled points' observed 3D positions at frames 0-9.
 3. The points' frame-0 UV coordinates.
-4. A hashed text vector from the Something-Something label.
+4. Text conditioning from the Something-Something label.
 
 Training entrypoint:
 
@@ -249,4 +251,22 @@ The initial local smoke-training run used 201 curated dense clips and wrote chec
 
 ```text
 data/something_something/future_track_training/initial_10f_to_32f/
+```
+
+The training script also supports a text-token AdaLN variant:
+
+```bash
+python scripts/train_future_3d_tracks.py \
+  --model-variant text-adaln \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_500 \
+  --manifest sam3_anchor_masks/manifest_500.json \
+  --obs-frames 10 \
+  --total-frames 32 \
+  --num-points 256 \
+  --batch-size 2 \
+  --epochs 20 \
+  --steps-per-epoch 362 \
+  --device cuda \
+  --amp
 ```
