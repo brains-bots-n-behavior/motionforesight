@@ -1,18 +1,33 @@
 # Models
 
-This folder will hold model definitions, training configs, and evaluation notes for future 3D scene flow prediction.
+This folder holds model definitions, training configs, and evaluation notes for future 3D scene flow prediction.
 
-Near-term model plan:
+## Current Baseline
 
-1. Use short Action100M segments as action-centric video inputs.
-2. Estimate depth and camera trajectories for each clip.
-3. Run dense 3D point tracking to produce scene-flow-style supervision.
-4. Train or probe video models to predict future 3D motion from observed frames.
+`future_3d_tracks/` is the first repo-local baseline for future 3D point-track prediction. It uses TrackCraft3r dense outputs as pseudo-ground-truth supervision, but it does not feed the model the full video.
 
-Candidate starting points:
+Input:
 
-- TrackCraft3r-style dense 3D trajectory outputs as supervision.
-- Video diffusion transformer features as motion priors.
-- Future-window targets such as per-point displacement, visibility, and occlusion-aware flow.
+- RGB frames 0-9.
+- Observed 3D point positions at frames 0-9.
+- Frame-0 UV coordinates for sampled SAM3 object-mask points.
+- A hashed text vector from the Something-Something label.
 
-This directory is intentionally lightweight until the data curation and tracking outputs stabilize.
+Target:
+
+- Future 3D point positions for frames 10-31.
+
+Train:
+
+```bash
+python scripts/train_future_3d_tracks.py \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_500 \
+  --manifest sam3_anchor_masks/manifest_500.json \
+  --obs-frames 10 \
+  --total-frames 32 \
+  --device cuda \
+  --amp
+```
+
+Training outputs are written under `data/something_something/future_track_training/`, which is ignored by git.

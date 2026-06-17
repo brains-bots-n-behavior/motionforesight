@@ -39,7 +39,8 @@ future-3d-scene-flow/
 │   ├── run_action100m_sam3_first_frame_masks.py
 │   ├── run_action100m_trackcraft3r.py
 │   ├── run_something_sam3_anchor_masks.py
-│   └── run_trackcraft3r_dense_batch.py
+│   ├── run_trackcraft3r_dense_batch.py
+│   └── train_future_3d_tracks.py
 ├── viewer/
 │   └── action100m_projected_tracks_template.html
 ├── external/
@@ -50,7 +51,8 @@ future-3d-scene-flow/
 │   ├── 200videos_3dtracks.gif
 │   └── 200videos_3dtracks.webm
 └── models/
-    └── README.md
+    ├── README.md
+    └── future_3d_tracks/ # first 10 frames -> future 3D point tracks
 ```
 
 ## Environment Setup
@@ -211,7 +213,40 @@ Key repo scripts:
 - `scripts/run_something_sam3_anchor_masks.py`: creates Something-Something hand-anchored clips and object masks from `train.json` placeholders.
 - `scripts/prepare_something_track_lists.py`: merges sharded Something-Something SAM3 manifests and writes trackable 32-frame GPU lists.
 - `scripts/run_trackcraft3r_dense_batch.py`: runs TrackCraft3r dense inference over many prepared user NPZs with one model load.
+- `scripts/train_future_3d_tracks.py`: trains the first 10-frame future 3D point-track predictor from curated dense tracks.
 - `scripts/build_action100m_mask_trace_viewer.py`: builds the projected HTML track viewer.
 - `viewer/action100m_projected_tracks_template.html`: tracked HTML template used by the projected viewer.
 
 See [data/README.md](data/README.md) for exact commands.
+
+## Future Track Prediction
+
+The first trainable baseline lives in `models/future_3d_tracks/`. It reuses the curated TrackCraft3r dense outputs as pseudo-ground-truth but does not edit the TrackCraft3r submodule. For each clip, it samples points inside the SAM3 object mask and trains a model to predict frames 10-31 from only:
+
+1. RGB frames 0-9.
+2. The sampled points' observed 3D positions at frames 0-9.
+3. The points' frame-0 UV coordinates.
+4. A hashed text vector from the Something-Something label.
+
+Training entrypoint:
+
+```bash
+python scripts/train_future_3d_tracks.py \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_500 \
+  --manifest sam3_anchor_masks/manifest_500.json \
+  --obs-frames 10 \
+  --total-frames 32 \
+  --num-points 256 \
+  --batch-size 2 \
+  --epochs 20 \
+  --steps-per-epoch 200 \
+  --device cuda \
+  --amp
+```
+
+The initial local smoke-training run used 201 curated dense clips and wrote checkpoints to:
+
+```text
+data/something_something/future_track_training/initial_10f_to_32f/
+```

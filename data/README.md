@@ -143,6 +143,7 @@ scripts/run_something_sam3_anchor_masks.py
 scripts/prepare_something_track_lists.py
 scripts/run_trackcraft3r_dense_batch.py
 scripts/run_something_anchor_tracking_test.sh
+scripts/train_future_3d_tracks.py
 ```
 
 `scripts/run_action100m_trackcraft3r.py` is dataset-agnostic despite the historical name: it can run TrackCraft3r on any local video list.
@@ -689,6 +690,35 @@ data/something_something/anchor_track32_all_viewer/index.html
 ```
 
 The 500-candidate pilot produced 201 successful 32-frame dense tracks and about 55 GB of dense NPZ files. A full-dataset run can be multiple TB, so check available disk space before launching dense tracking.
+
+### Train Future 3D Track Prediction
+
+Once `anchor_tracks32_500/` or another dense-track directory exists, train the repo-local future predictor. The model uses TrackCraft3r dense maps as pseudo-labels but only receives the first 10 video frames and first 10 observed 3D positions for sampled SAM3 object-mask points.
+
+```bash
+python scripts/train_future_3d_tracks.py \
+  --root data/something_something \
+  --tracks-name anchor_tracks32_500 \
+  --manifest sam3_anchor_masks/manifest_500.json \
+  --output-dir data/something_something/future_track_training/initial_10f_to_32f \
+  --obs-frames 10 \
+  --total-frames 32 \
+  --num-points 128 \
+  --image-size 96 160 \
+  --embed-dim 128 \
+  --num-heads 4 \
+  --num-layers 2 \
+  --batch-size 2 \
+  --epochs 2 \
+  --steps-per-epoch 50 \
+  --val-steps 10 \
+  --samples-per-clip 4 \
+  --num-workers 2 \
+  --device cuda \
+  --amp
+```
+
+The first local run indexed 201 dense clips, split them into 181 train and 20 validation clips, and wrote `best.pt`, `last.pt`, `epoch_001.pt`, `epoch_002.pt`, and `config.json` under the output directory above. The best validation ADE from this short run was about 5.8 cm over sampled masked points.
 
 ### Select A Small Test Set
 
