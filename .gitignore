@@ -3,3 +3,6 @@ data/something_something/
 data/action100m_missing_urls.txt
 __pycache__/
 *.py[cod]
+
+# Vendored pretrained weights (34GB) - do not commit
+models_pretrained/checkpoints/
