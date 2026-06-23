@@ -60,6 +60,14 @@ Tested on a single **NVIDIA RTX 4090 (24 GB)**.
 
 ## 2. Pretrained weights (NOT in git — download to `models_pretrained/checkpoints/`)
 
+> **Hosted checkpoints (JHU SharePoint, may require sign-in):**
+> https://livejohnshopkins-my.sharepoint.com/:f:/r/personal/hbharad2_jh_edu/Documents/3d_tracks_data/checkpoint_based_on_trackcraft3r?csf=1&web=1&e=gTKSej
+>
+> This folder holds the trained future-prediction checkpoint(s) (and any base-model
+> mirror). It is a SharePoint *folder* share — browse and download the files in a
+> browser, then place them at the paths below (SharePoint share links aren't direct
+> `curl`/`wget` targets).
+
 The two frozen base models are gitignored (34 GB). Place them as:
 
 ```
@@ -83,20 +91,21 @@ python external/TrackCraft3r/scripts/download_wan_1.3B.py \
   --target models_pretrained/checkpoints/wan_models
 ```
 
-> Mirror: both base files are also hosted at `<WEB_FOLDER_URL>/` — drop them at
-> the paths above. (Fill in the web-folder URL.)
+The base TrackCraft3r + Wan files may also be mirrored in the SharePoint folder
+above — if so, download them there instead of the HF hub and drop them at the
+paths shown.
 
 ### Trained future-prediction checkpoint
 
-The trained checkpoint stores **only the fine-tuned tensors** (~146 MB: the fresh
-LoRA adapter + I/O/head + mask latents), so it is small and is hosted in the web
-folder rather than git:
+The trained checkpoint stores **only the fine-tuned tensors** (~140 MB: the fresh
+rank-32 LoRA adapter + I/O/head + mask latents), so it is small and is hosted in
+the SharePoint folder (§2 link) rather than git. Download it from there and place
+it, e.g.:
 
 ```bash
-# download the trained future-prediction checkpoint
 mkdir -p checkpoints_future
-curl -L -o checkpoints_future/freshlora_decoded_320x576_best_epoch13.pt \
-  <WEB_FOLDER_URL>/freshlora_decoded_320x576_best_epoch13.pt
+# from the SharePoint folder, download best.pt (epoch 13, 5.27 cm val ADE) to:
+#   checkpoints_future/freshlora_decoded_320x576_best_epoch13.pt
 ```
 
 Loading it reconstructs the model from its embedded config and applies the
