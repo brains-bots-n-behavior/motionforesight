@@ -130,6 +130,13 @@ class FutureSceneFlowModel(nn.Module):
 
         # 3. Cached null text context + regression timestep (from the predictor).
         self._null_context = predictor._null_context
+        # We only ever use the cached null-text context, so drop the (CPU-resident)
+        # T5 text encoder: keeps it out of .parameters() so the model is on a single
+        # device (required by DistributedDataParallel) and frees host RAM.
+        if getattr(self.pipe, "text_encoder", None) is not None:
+            self.pipe.text_encoder = None
+        if getattr(getattr(self.pipe, "prompter", None), "text_encoder", None) is not None:
+            self.pipe.prompter.text_encoder = None
         self.register_buffer(
             "regression_timestep_value",
             self.pipe.scheduler.timesteps[config.regression_timestep].clone(),
@@ -140,9 +147,12 @@ class FutureSceneFlowModel(nn.Module):
         self._configure_trainable(config.trainable)
 
         # 5. Move the newly-created params/buffers to the pipeline device (the
-        #    pretrained pipe modules are already there; these are not).
+        #    pretrained pipe modules are already there; these are not). Moving ALL
+        #    buffers to the device keeps the module single-device for DDP.
         self.rgb_mask_latent.data = self.rgb_mask_latent.data.to(self.device)
         self.pj_mask_latent.data = self.pj_mask_latent.data.to(self.device)
+        for _b in self.buffers():
+            _b.data = _b.data.to(self.device)
 
     # ------------------------------------------------------------------ setup
     def _configure_trainable(self, groups) -> None:

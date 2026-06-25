@@ -65,6 +65,56 @@ def decoded_loss(
     return (obs_weight * obs + future_weight * fut) * scale
 
 
+def _sample_at_query(pred, quv):
+    """pred (B,3,T,h,w), quv (B,N,2 xy) -> (B,T,N,3) nearest-sampled."""
+    B, _, T, h, w = pred.shape
+    u = quv[..., 0].round().long().clamp(0, w - 1)   # B,N
+    v = quv[..., 1].round().long().clamp(0, h - 1)
+    out = [pred[b][:, :, v[b], u[b]] for b in range(B)]  # each 3,T,N
+    return torch.stack(out, 0).permute(0, 2, 3, 1)        # B,T,N,3
+
+
+def sparse_decoded_loss(model, query_latent, batch, obs_frames,
+                        future_weight=1.0, obs_weight=0.25, scale=10.0, use_checkpoint=True):
+    """TrackCraft3r-style decoded loss, supervised sparsely at the query points
+    (visibility-masked), for the sparse dataset."""
+    xyz, _ = model.split_latent(query_latent)
+    delta = model.decode_xyz_grad(xyz, use_checkpoint=use_checkpoint)   # B,3,T,h,w
+    p0 = batch["p0_t0_norm"].to(delta.device)
+    pred = model.reconstruct(delta, p0).float()                        # B,3,T,h,w
+    pred_pts = _sample_at_query(pred, batch["query_uv_model"].to(delta.device))  # B,T,N,3
+    gt = batch["gt_tracks_norm"].to(delta.device).float()              # B,T,N,3
+    vis = batch["visibility"].to(delta.device).float()                 # B,T,N
+    err = (pred_pts - gt).pow(2).mean(-1) * vis                        # B,T,N
+    denom = vis.sum(dim=(0, 2)) + 1e-6                                  # T
+    per_frame = err.sum(dim=(0, 2)) / denom
+    obs = per_frame[:obs_frames].mean() if obs_frames > 0 else per_frame.new_zeros(())
+    fut = per_frame[obs_frames:].mean() if per_frame.shape[0] > obs_frames else per_frame.new_zeros(())
+    return (obs_weight * obs + future_weight * fut) * scale
+
+
+@torch.no_grad()
+def sparse_metrics(model, query_latent, batch, obs_frames):
+    """ADE/FDE (meters) at the query points, visibility-masked, future frames."""
+    xyz, _ = model.split_latent(query_latent)
+    delta = model.decode_xyz(xyz).float()
+    p0 = batch["p0_t0_norm"].to(delta.device).float()
+    pred_n = model.reconstruct(delta, p0)
+    mean = batch["pj_mean"].to(delta.device).float(); sc = batch["pj_scale"].to(delta.device).float()
+    pred_m = model.denormalize(pred_n, mean, sc)                       # B,3,T,h,w
+    pred_pts = _sample_at_query(pred_m, batch["query_uv_model"].to(delta.device))  # B,T,N,3
+    gt_n = batch["gt_tracks_norm"].to(delta.device).float()           # B,T,N,3
+    gt_pts = gt_n * sc.view(-1, 1, 1, 1) + mean.view(-1, 1, 1, 3)      # denormalize
+    vis = batch["visibility"].to(delta.device).float()                # B,T,N
+    d = torch.linalg.norm(pred_pts - gt_pts, dim=-1)                  # B,T,N
+    o = obs_frames
+    fut_vis = vis[:, o:]; fut_d = d[:, o:]
+    ade = float((fut_d * fut_vis).sum() / (fut_vis.sum() + 1e-6))
+    last_vis = vis[:, -1]; last_d = d[:, -1]
+    fde = float((last_d * last_vis).sum() / (last_vis.sum() + 1e-6))
+    return {"ade_future_m": ade, "fde_future_m": fde, "ade_m": ade, "fde_m": fde}
+
+
 @torch.no_grad()
 def decoded_metrics(
     model,
