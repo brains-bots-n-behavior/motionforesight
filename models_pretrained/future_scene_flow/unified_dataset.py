@@ -67,7 +67,8 @@ def _resize_coord(arr, h, w):
 class UnifiedTrackDataset(Dataset):
     def __init__(self, items, obs_frames=10, total_frames=32, image_size=(320, 576),
                  num_points=48, diag_max_depth=80.0, lo=2.0, hi=98.0,
-                 samples_per_clip=1, seed=0, subtract_camera_motion=True):
+                 samples_per_clip=1, seed=0, subtract_camera_motion=True,
+                 dense_grid_stride=0, max_points=4000):
         if not items:
             raise ValueError("empty item list")
         self.items = items
@@ -77,11 +78,16 @@ class UnifiedTrackDataset(Dataset):
         self.diag_max_depth, self.lo, self.hi = diag_max_depth, lo, hi
         self.spc = max(1, samples_per_clip); self.seed = seed
         self.sub_cam = subtract_camera_motion
+        # dense_grid_stride>0: for DENSE clips, sample a regular pixel grid inside
+        # the mask (at dense resolution) instead of `num_points` random points.
+        self.dense_grid_stride = dense_grid_stride
+        self.max_points = max_points
 
     def __len__(self):
         return len(self.items) * self.spc
 
-    def _finish(self, pj_obs_world, tracks_world, quv_xy, vis, w2c_lastobs, rgb_obs_chw, video_id, text):
+    def _finish(self, pj_obs_world, tracks_world, quv_xy, vis, w2c_lastobs, rgb_obs_chw,
+                intr_model, video_id, text):
         """Shared tail: camera-subtract, normalize, package."""
         h, w, obs = self.h, self.w, self.obs
         T_sub = w2c_lastobs if self.sub_cam else np.eye(4)
@@ -102,6 +108,7 @@ class UnifiedTrackDataset(Dataset):
             "pj_mean": torch.from_numpy(mean.astype(np.float32)),
             "pj_scale": torch.tensor(scale, dtype=torch.float32),
             "w2c_lastobs": torch.from_numpy(T_sub.astype(np.float32)),
+            "intr_model": torch.from_numpy(np.asarray(intr_model, np.float32)),  # fx,fy,cx,cy at model res
             "video_id": video_id, "text": text,
         }
 
@@ -134,7 +141,7 @@ class UnifiedTrackDataset(Dataset):
         finite = np.isfinite(tracks).all(axis=(0, 2))
         vis = vis * finite[None, :]
         return self._finish(pj_world, tracks, quv_m, vis, w2c[obs - 1],
-                            _resize_rgb(rgb[:obs], h, w), item.video_id, str(s["text"]))
+                            _resize_rgb(rgb[:obs], h, w), intr_m, item.video_id, str(s["text"]))
 
     # ------------------------------------------------------------------- dense
     def _get_dense(self, item, rng):
@@ -146,19 +153,29 @@ class UnifiedTrackDataset(Dataset):
         Hd, Wd = track_map.shape[1:3]
         u = np.load(_user_path(item.path, "dense"), allow_pickle=True)
         w2c = u["extrinsics_w2c"][:T].astype(np.float64)
+        Hn, Wn = u["depth_map"].shape[1:3]
+        fx, fy, cx, cy = u["fx_fy_cx_cy"].astype(np.float64)
+        intr_m = np.array([fx * w / Wn, fy * h / Hn, cx * w / Wn, cy * h / Hn])
 
         mask = _load_union_mask(item.mask_paths, (Hd, Wd))
         valid = np.isfinite(track_map).all(axis=(0, 3))
         cand = mask & valid                      # ONLY points on the SAM object mask
         if cand.sum() == 0:                      # degenerate: mask has no valid pixel
             cand = valid
-        ys, xs = np.where(cand)
-        sel = rng.choice(ys.size, size=N, replace=ys.size < N)  # N from mask (w/ replacement if few)
-        ys, xs = ys[sel], xs[sel]
+        if self.dense_grid_stride > 0:           # dense grid of mask pixels (viz)
+            gy, gx = np.mgrid[0:Hd, 0:Wd]
+            grid = cand & (gy % self.dense_grid_stride == 0) & (gx % self.dense_grid_stride == 0)
+            ys, xs = np.where(grid if grid.sum() > 0 else cand)
+            if ys.size > self.max_points:
+                sel = rng.choice(ys.size, size=self.max_points, replace=False); ys, xs = ys[sel], xs[sel]
+        else:
+            ys, xs = np.where(cand)
+            sel = rng.choice(ys.size, size=N, replace=ys.size < N)  # N from mask (w/ replacement if few)
+            ys, xs = ys[sel], xs[sel]
         tracks = track_map[:, ys, xs, :]                           # T,N,3 world
         vis = np.ones((T, len(xs)), np.float32)
 
         pj_world = _resize_coord(recon_map, h, w)                  # obs,h,w,3 world
         quv_m = np.stack([xs.astype(np.float64) * w / Wd, ys.astype(np.float64) * h / Hd], -1)
         return self._finish(pj_world, tracks, quv_m, vis, w2c[obs - 1],
-                            _resize_rgb(rgb, h, w), item.video_id, item.text)
+                            _resize_rgb(rgb, h, w), intr_m, item.video_id, item.text)
