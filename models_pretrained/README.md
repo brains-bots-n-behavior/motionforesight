@@ -4,6 +4,8 @@ This folder is a **self-contained snapshot** of TrackCraft3r plus an alternate
 future-track-prediction architecture that *reuses the pretrained model* instead
 of training from scratch. Nothing in `external/TrackCraft3r` is modified.
 
+> **Full from-scratch reproduction (data gen → training → eval → viz → OOD →
+> baselines):** see [FULL_REPRODUCTION.md](FULL_REPRODUCTION.md).
 > **What's modified from TrackCraft3r + training mechanism (with figures):** see
 > [MODIFICATIONS.md](MODIFICATIONS.md).
 > **Reproducing / training / visualizing:** see [REPRODUCE.md](REPRODUCE.md) for
