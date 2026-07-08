@@ -193,6 +193,10 @@ full clip, then predict the future tracks," preprocess with `--num-frames 7
 predicts the 15 future internally). Then use the zero-shot scripts as above with
 `--proc-dir "$VID/processed7"`.
 
+### 4f. Push side-by-side videos to Weights & Biases (`log_val_videos_wandb.py`)
+After a sharded `render_unified_viewer` run, `merge_val_viewers.py` merges shards and
+`log_val_videos_wandb.py` logs GT|pred side-by-side as a wandb Table.
+
 ### 4g. Live viser 3D for zero-shot (moving predicted OBJECT) (`ood_viser_viewer_moving.py`)
 Animates the scene through all 22 frames. Frames 0–6 are the real observed cloud
 (moves with the real camera); for the future frames the **background is the real
@@ -212,10 +216,6 @@ training supervises ONLY the SAM-object mask pixels
 (measured 1–5 cm move, and 7–22 cm offset from the true observed geometry), so it
 is deliberately NOT rendered as prediction — the frozen real background is shown
 instead. See gotcha 9.
-
-### 4f. Push side-by-side videos to Weights & Biases (`log_val_videos_wandb.py`)
-After a sharded `render_unified_viewer` run, `merge_val_viewers.py` merges shards and
-`log_val_videos_wandb.py` logs GT|pred side-by-side as a wandb Table.
 
 ---
 
