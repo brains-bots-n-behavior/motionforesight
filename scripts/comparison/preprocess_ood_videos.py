@@ -37,7 +37,12 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--video-dir", default="zero-shot-eval")
     ap.add_argument("--out-dir", default="zero-shot-eval/processed")
-    ap.add_argument("--num-frames", type=int, default=10, help="uniformly sampled observed frames")
+    ap.add_argument("--num-frames", type=int, default=10, help="number of frames to sample")
+    ap.add_argument("--frame-stride", type=int, default=0,
+                    help="0 = uniform linspace of num-frames over the whole clip (observed 7 + future "
+                         "15 span the full video). >0 = num-frames CONSECUTIVE frames at this stride "
+                         "from --start-frame (matches training's stride-1 clips).")
+    ap.add_argument("--start-frame", type=int, default=0, help="first frame index when --frame-stride>0")
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--width", type=int, default=832)
     ap.add_argument("--model-name", default="depth-anything/DA3NESTED-GIANT-LARGE")
@@ -93,7 +98,13 @@ def main():
         # intrinsics: scale proc-res -> (H,W), take frame 0
         K = intr[0].copy(); sx = a.width / Wp; sy = a.height / Hp
         fx, fy, cx, cy = K[0, 0] * sx, K[1, 1] * sy, K[0, 2] * sx, K[1, 2] * sy
+        # JPEG-encode frames so TrackCraft3r's loader (images_jpeg_bytes) can run
+        # dense tracking on these clips too (real GT tracks). Keep raw rgb as well.
+        jpg = np.array([cv2.imencode(".jpg", cv2.cvtColor(rgb[t], cv2.COLOR_RGB2BGR),
+                        [int(cv2.IMWRITE_JPEG_QUALITY), 95])[1].tobytes()
+                        for t in range(len(rgb))], dtype=object)
         np.savez_compressed(out / f"{vid}_user.npz",
+                            images_jpeg_bytes=jpg,
                             rgb=rgb.astype(np.uint8), depth_map=depth,
                             extrinsics_w2c=E, fx_fy_cx_cy=np.array([fx, fy, cx, cy], np.float64),
                             frame_indices=idx.astype(np.int32))

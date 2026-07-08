@@ -11,6 +11,7 @@ Per-clip output (same keys for both formats; variable N -> use batch_size=1):
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
+import zipfile
 import numpy as np
 import cv2
 import torch
@@ -113,12 +114,23 @@ class UnifiedTrackDataset(Dataset):
         }
 
     def __getitem__(self, idx):
-        item = self.items[idx % len(self.items)]
-        h, w, obs, T = self.h, self.w, self.obs, self.total
         rng = np.random.default_rng(self.seed + idx * 9973)
-        if item.fmt == "sparse":
-            return self._get_sparse(item, rng)
-        return self._get_dense(item, rng)
+        # Corrupt/truncated npz (e.g. a clip whose write was interrupted when the
+        # tracking batch died) would otherwise crash the whole run. Skip to the
+        # next clip and retry so one bad file can't kill a multi-hour DDP job.
+        n = len(self.items)
+        for attempt in range(16):
+            item = self.items[(idx + attempt) % n]
+            try:
+                if item.fmt == "sparse":
+                    return self._get_sparse(item, rng)
+                return self._get_dense(item, rng)
+            except (zipfile.BadZipFile, OSError, EOFError, ValueError) as e:
+                if attempt == 0:
+                    print(f"[dataset] skipping bad clip {item.video_id} "
+                          f"({item.path.name}): {type(e).__name__}: {e}", flush=True)
+                continue
+        raise RuntimeError(f"too many corrupt clips near idx {idx} (>{16} skipped)")
 
     # ------------------------------------------------------------------ sparse
     def _get_sparse(self, item, rng):
