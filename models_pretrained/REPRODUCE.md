@@ -111,6 +111,32 @@ mkdir -p checkpoints_future
 Loading it reconstructs the model from its embedded config and applies the
 fine-tuned tensors on top of the frozen base checkpoint (above) — see §4/§5.
 
+**Latest checkpoint — `trainedon_ss100k` (epoch 68, val future-ADE ≈ 3.98 cm).**
+Fresh-LoRA fine-tune on the ~100k-clip Something-Something subset (`ss_subset100k`),
+obs 7 → predict 15 future, 320×576. It sits in the SharePoint checkpoint folder
+(§2 link) next to `trainedon_600` / `trainedon_3k`:
+`checkpoint_based_on_trackcraft3r/trainedon_ss100k/{best.pt, last.pt, config.json}`
+(`config.json` records the epoch, val metrics, and exact model config).
+
+Download it from the browser (§2 link), or with rclone if you have the OneDrive
+remote configured (the `shared3d:` remote resolves to
+`.../Documents/3d_tracks_data`):
+```bash
+mkdir -p checkpoints_future
+rclone copy shared3d:checkpoint_based_on_trackcraft3r/trainedon_ss100k \
+  checkpoints_future/trainedon_ss100k -P     # best.pt + last.pt + config.json
+```
+Load it (in any script) via the shared builder, which rebuilds the model from the
+embedded config and grafts the fine-tuned tensors onto the frozen base:
+```python
+import models_pretrained  # noqa  (import isolation; must precede diffsynth/evaluation)
+from render_future_scene_flow_viewer import build_model_from_ckpt
+model, state = build_model_from_ckpt(
+    Path("checkpoints_future/trainedon_ss100k/best.pt"),
+    Path("models_pretrained/checkpoints/trackcraft3r/model.safetensors"))
+model.eval()   # obs_frames / total_frames are read from the checkpoint (7 -> 22)
+```
+
 ---
 
 ## 3. Data
@@ -203,6 +229,38 @@ cd data/something_something/future_scene_flow_viewer && $PY -m http.server 8009
 
 The checkpoint is copied to a temp file before loading, so the viewer is safe to
 run against a checkpoint dir that a training job is still writing.
+
+### Evaluate the `trainedon_ss100k` checkpoint (unified dataset)
+
+For the latest 100k-subset model, use the **unified** eval/viewer
+(`scripts/comparison/render_unified_viewer.py`), which reports val ADE/FDE on the
+same split used during training and writes GT-vs-pred trail videos + `index.html`:
+
+```bash
+CKPT=checkpoints_future/trainedon_ss100k/best.pt
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 \
+$PY scripts/comparison/render_unified_viewer.py \
+  --checkpoint "$CKPT" \
+  --base-checkpoint models_pretrained/checkpoints/trackcraft3r/model.safetensors \
+  --root data/ss_subset100k --dense-tracks-name anchor_tracks32 \
+  --dense-manifest sam3_anchor_masks/manifest_merged.json --sparse-tracks-name "" \
+  --output-dir data/ss_subset100k/val_eval --dense-only \
+  --val-count 999 --num-points 64
+```
+
+Prints an aggregate line like `val: ADE 3.98cm · FDE 6.79cm (N clips)` and writes
+`index.html` + `videos/*.webm` to `--output-dir`. Notes:
+- **`--val-count` is a clip count, not a flag** — use a large number (e.g. 999) for
+  "all val clips"; `--val-count 0` renders **no** val clips (unlike the §5 viewer
+  above). Add `--val-start` to page through more than `--val-count` clips.
+- Needs the ss100k dense val data on disk (`data/ss_subset100k/anchor_tracks32/` +
+  `sam3_anchor_masks/manifest_merged.json`); the val split is
+  `split_items(items, 0.05, 7)` (val-fraction 0.05, seed 7).
+- The model's `obs_frames`/`total_frames` (7 → 22) come from the checkpoint config,
+  so no frame-count flags are needed.
+
+For **zero-shot inference on new/arbitrary videos** (OOD) and the interactive 3D
+viewers, see `scripts/comparison/README_ood_val_inference_viz.md`.
 
 ---
 

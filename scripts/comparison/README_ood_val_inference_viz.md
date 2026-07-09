@@ -45,8 +45,20 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONUNBUFFERED=1
 
 **Trained checkpoint (the model):**
 `$REPO/data/ss_subset100k/future_track_training/freshlora_ss100k_7to22_320x576/best.pt`
-(best val future-ADE ≈ 3.98 cm). Pass it as `--checkpoint`; pass
+(epoch 68, best val future-ADE ≈ 3.98 cm). Pass it as `--checkpoint`; pass
 `$CK/trackcraft3r/model.safetensors` as `--base-checkpoint`.
+
+If it's not on local disk, it's hosted on the JHU SharePoint (folder
+`3d_tracks_data/checkpoint_based_on_trackcraft3r/trainedon_ss100k/`, with
+`best.pt` + `last.pt` + `config.json`). Download from the browser, or with rclone
+(the `shared3d:` remote resolves to `.../Documents/3d_tracks_data`):
+```bash
+rclone copy shared3d:checkpoint_based_on_trackcraft3r/trainedon_ss100k \
+  "$REPO/checkpoints_future/trainedon_ss100k" -P
+CKPT="$REPO/checkpoints_future/trainedon_ss100k/best.pt"
+```
+To evaluate it on the val split (ADE/FDE), see REPRODUCE.md §5
+("Evaluate the `trainedon_ss100k` checkpoint").
 
 Every inference script needs **1 GPU** (`CUDA_VISIBLE_DEVICES=<idx>`). ~18 GB to load;
 fits alongside other jobs on an 80 GB card.
