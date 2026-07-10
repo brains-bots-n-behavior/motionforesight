@@ -30,6 +30,7 @@ def parse_args():
     ap.add_argument("--out-dir", default="zero-shot-eval/masks")
     ap.add_argument("--prompt", action="append", default=[], help="videoid:text (repeatable)")
     ap.add_argument("--sam3-root", default="external/sam3")
+    ap.add_argument("--checkpoint", default=None, help="Optional local SAM3 checkpoint")
     ap.add_argument("--frame", type=int, default=0, help="which observed frame to segment")
     ap.add_argument("--conf", type=float, default=0.2)
     ap.add_argument("--min-area", type=int, default=200)
@@ -57,7 +58,7 @@ def main():
     bpe = Path(a.sam3_root) / "sam3" / "assets" / "bpe_simple_vocab_16e6.txt.gz"
     print("loading SAM3 ...", flush=True)
     model = build_sam3_image_model(bpe_path=str(bpe) if bpe.exists() else None,
-                                   checkpoint_path=None, load_from_HF=True,
+                                   checkpoint_path=a.checkpoint, load_from_HF=a.checkpoint is None,
                                    device=a.device, eval_mode=True)
     processor = Sam3Processor(model=model, device=a.device, confidence_threshold=a.conf)
 

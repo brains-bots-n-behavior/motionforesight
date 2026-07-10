@@ -6,14 +6,18 @@ __pycache__/
 
 # Vendored pretrained weights (34GB) - do not commit
 models_pretrained/checkpoints/
+models_pretrained/checkpoints
 
 # Trained checkpoints (140MB each) - pushed to OneDrive, not git
 *.pt
+checkpoints_future
+trainedon_ss100k/
 
 # Data, samples, and experiment outputs - large / not source
 data/new_samples/
 data/ss_subset100k/
 data/_smoke100k/
 data/_eqv_clips.txt
+val_videos/
 wandb/
 _eqv_check.sh
