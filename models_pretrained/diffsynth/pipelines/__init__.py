@@ -1,1 +1,1 @@
-from .wan_video import WanVideoPipeline
+from .wan_video_new import WanVideoPipeline, ModelConfig

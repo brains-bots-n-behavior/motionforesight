@@ -23,7 +23,33 @@ import cv2
 import torch
 from torch.utils.data import Dataset
 
-from .dataset import _compute_pj_norm  # reuse z-inlier Pj normalization
+
+
+@dataclass
+class PjNorm:
+    mean: np.ndarray
+    scale: float
+
+
+def _compute_pj_norm(recon_obs: np.ndarray, diag_max_depth: float, lo: float, hi: float) -> PjNorm:
+    """TrackCraft3r-style Pj normalization from observed frames."""
+    pts = recon_obs.reshape(-1, 3).copy()
+    finite = np.isfinite(pts).all(axis=1)
+    pts = pts[finite]
+    if pts.size == 0:
+        return PjNorm(mean=np.zeros(3, np.float32), scale=1.0)
+    if diag_max_depth > 0:
+        pts[:, 2] = np.clip(pts[:, 2], 1e-6, diag_max_depth)
+    z = pts[:, 2]
+    z_lo, z_hi = np.percentile(z, lo), np.percentile(z, hi)
+    inlier = (pts[:, 2] >= z_lo) & (pts[:, 2] <= z_hi)
+    inlier_pts = pts[inlier] if inlier.any() else pts
+    mean = inlier_pts.mean(axis=0)
+    centered = inlier_pts - mean
+    scale = float(np.linalg.norm(centered, axis=1).max())
+    if not np.isfinite(scale) or scale < 1e-6:
+        scale = 1.0
+    return PjNorm(mean=mean.astype(np.float32), scale=scale)
 
 
 @dataclass(frozen=True)

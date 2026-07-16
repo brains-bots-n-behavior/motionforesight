@@ -1,23 +1,19 @@
-data/action100m/
-data/something_something/
-data/action100m_missing_urls.txt
 __pycache__/
 *.py[cod]
+*.egg-info/
 
-# Vendored pretrained weights (34GB) - do not commit
+# Downloaded model assets and checkpoints
+assets/
+checkpoints/
 models_pretrained/checkpoints/
 models_pretrained/checkpoints
 
-# Trained checkpoints (140MB each) - pushed to OneDrive, not git
-*.pt
-checkpoints_future
-trainedon_ss100k/
+# Generated outputs and local experiment data
+outputs/
+raw_videos/
+val_videos/
 
-# Data, samples, and experiment outputs - large / not source
+# Large training datasets are not part of the inference release
+data/action100m/
 data/new_samples/
 data/ss_subset100k/
-data/_smoke100k/
-data/_eqv_clips.txt
-val_videos/
-wandb/
-_eqv_check.sh

@@ -22,7 +22,7 @@ for p in (str(REPO), str(REPO / "scripts"), str(REPO / "scripts/comparison")):
 import models_pretrained  # noqa: E402,F401
 from ood_common import ood_predict  # noqa: E402
 from plotly.offline import get_plotlyjs  # noqa: E402
-from render_future_scene_flow_viewer import build_model_from_ckpt  # noqa: E402
+from inference_model import build_model_from_ckpt  # noqa: E402
 
 DEFAULT_BASE = REPO / "models_pretrained/checkpoints/trackcraft3r/model.safetensors"
 

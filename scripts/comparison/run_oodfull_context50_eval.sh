@@ -20,7 +20,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO"
 
-source scripts/setup_f3dsf_viser_env.sh >/dev/null
+source scripts/setup_inference_env.sh >/dev/null
 
 : "${VIDEO_DIR:?set VIDEO_DIR to a directory of .mp4 files}"
 : "${OUT_ROOT:?set OUT_ROOT to an output directory}"
@@ -30,7 +30,7 @@ STAGE="${STAGE:-all}"
 PC_STRIDE="${PC_STRIDE:-1}"
 GRID_STRIDE="${GRID_STRIDE:-2}"
 FPS="${FPS:-8.0}"
-SAM3_CHECKPOINT="${SAM3_CHECKPOINT:-/scratch/hbharad2/users/hbharad2/future-3d-scene-flow/hf_cache/models--facebook--sam3/snapshots/3c879f39826c281e95690f02c7821c4de09afae7/sam3.pt}"
+SAM3_CHECKPOINT="${SAM3_CHECKPOINT:-$MOTIONFORESIGHT_ROOT/assets/sam3/sam3.pt}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
@@ -117,8 +117,8 @@ fi
 
 if [ "$STAGE" = "all" ] || [ "$STAGE" = "viz" ]; then
   "$PY" scripts/comparison/ood_render_html.py \
-    --checkpoint "$F3DSF_CKPT" \
-    --base-checkpoint "$F3DSF_BASE" \
+    --checkpoint "$MOTIONFORESIGHT_CKPT" \
+    --base-checkpoint "$MOTIONFORESIGHT_BASE" \
     --proc-dir "$PROC" \
     --mask-dir "$MASK" \
     --out-dir "$VIEW2D" \
@@ -126,8 +126,8 @@ if [ "$STAGE" = "all" ] || [ "$STAGE" = "viz" ]; then
     --fps "$FPS"
 
   "$PY" scripts/comparison/build_ood_3d_html_one.py \
-    --checkpoint "$F3DSF_CKPT" \
-    --base-checkpoint "$F3DSF_BASE" \
+    --checkpoint "$MOTIONFORESIGHT_CKPT" \
+    --base-checkpoint "$MOTIONFORESIGHT_BASE" \
     --user-dir "$PROC" \
     --mask-dir "$MASK" \
     --out-dir "$HTML3D" \

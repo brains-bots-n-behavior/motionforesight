@@ -1,272 +1,185 @@
-# Future 3D Scene Flow
+# MotionForesight
 
-This project explores re-purposing large video models for future 3D scene flow prediction: given an observed monocular video segment, predict how the visible 3D scene will move in the near future.
+![MotionForesight qualitative examples](media/motionforesight-qualitative-grid.gif)
 
-The working hypothesis is that video foundation models already encode useful priors about object permanence, contact, manipulation, articulation, and scene dynamics. Instead of training a future 3D tracker from scratch, we can build a pipeline that pairs short action-centric video clips with depth, camera, and dense 3D trajectory estimates, then use those signals to study and train future scene flow predictors.
+MotionForesight predicts future 3D object motion from RGB video. Given a short video
+context and an object mask, it forecasts 3D object tracks in the last-observed camera
+frame and can export self-contained interactive 3D HTML visualizations.
 
-## Problem Statement
-
-Given an image or a short video, plus a text instruction such as "knock down the cup", predict future 3D tracks describing how points on the relevant object should evolve over time. The goal is a general model that can produce these future 3D object tracks from arbitrary human videos.
-
-## TODO
-
-Done by Homanga:
-
-- [x] Segment Action100M clips into action segments.
-- [x] Generate SAM3 masks of the object in the 10th frame after the first frame where a hand is detected.
-- [x] Run 3D tracking on these clips.
-- [x] Run this pipeline for 200 clips. The demo video is embedded below. A 20-clip sample is available here: [Something-Something 20-clip track viewer package](https://livejohnshopkins-my.sharepoint.com/:f:/g/personal/hbharad2_jh_edu/IgCk0uiG1nuHSZ459dxUs_FsAXdK5Q2Y6GD6ulX_oY1FZYo?email=yjangir1%40jh.edu&e=wptieq). View it with the included HTML viewer.
-
-TODO for Yash:
-
-- [ ] Data curation: scale the steps set up by Homanga to all Something-Something videos.
-- [ ] Model wiring: test the future track prediction model on the 20 clips above for debugging.
-- [ ] Visualization: the target is 3D prediction, not just 2D tracks, so use Viser to visualize predicted 3D tracks as well.
-
-## Repository Layout
+## Repository Contents
 
 ```text
-future-3d-scene-flow/
-├── data/
-│   ├── README.md
-│   └── action100m/       # ignored local generated data
-├── scripts/
-│   ├── build_action100m_segment_viewer.py
-│   ├── build_action100m_viewer.py
-│   ├── build_action100m_mask_trace_viewer.py
-│   ├── prepare_action100m_track_lists.py
-│   ├── prepare_something_track_lists.py
-│   ├── run_action100m_sam3_first_frame_masks.py
-│   ├── run_action100m_trackcraft3r.py
-│   ├── run_something_sam3_anchor_masks.py
-│   ├── run_trackcraft3r_dense_batch.py
-│   ├── render_future_track_prediction_viewer.py
-│   └── train_future_3d_tracks.py
-├── viewer/
-│   └── action100m_projected_tracks_template.html
-├── external/
-│   ├── sam3/              # git submodule
-│   ├── TrackCraft3r/      # git submodule
-│   └── depth-anything-3/  # git submodule
-├── media/
-│   ├── 200videos_3dtracks.gif
-│   └── 200videos_3dtracks.webm
-└── models/
-    ├── README.md
-    └── future_3d_tracks/ # first 10 frames -> future 3D point tracks
+data/processed7_uniform/   example *_user.npz model inputs, 7 observed frames each
+scripts/                   preprocessing, masking, model loading, and HTML inference scripts
+models_pretrained/         minimal vendored runtime needed to load the model architecture
+checkpoints/               ignored; place downloaded fine-tuned checkpoint files here
+assets/                    ignored; recommended location for base model assets and caches
+outputs/                   ignored; generated visualizations go here
 ```
 
-## Environment Setup
+The packaged `.npz` examples correspond to four videos used in the paper's OOD
+visualization experiments. Raw videos are not tracked; the checked-in `.npz` files
+are the actual model inputs.
 
-Use the `3dflow` conda environment for SAM3 masking, Depth Anything 3 preprocessing, and TrackCraft3r dense tracking.
+## Model Assets
 
-Fresh clone:
+Download the fine-tuned MotionForesight checkpoint from the paper release assets
+and place it here:
 
-```bash
-git clone --recursive https://github.com/homangab/future-3d-scene-flow.git
-cd future-3d-scene-flow
+```text
+checkpoints/trainedon_ss100k/best.pt
+checkpoints/trainedon_ss100k/config.json
 ```
 
-If you already cloned without submodules:
+Checkpoint download link: `<RELEASE_CHECKPOINT_LINK>`
+
+The fine-tuned checkpoint is trained on top of TrackCraft3r/Wan2.1, so inference
+also needs the base TrackCraft3r checkpoint and Wan2.1 files. Put those assets
+outside git, for example:
+
+```text
+assets/models_pretrained/trackcraft3r/model.safetensors
+assets/models_pretrained/wan_models/Wan-AI/Wan2.1-T2V-1.3B/...
+```
+
+Then either use `scripts/setup_inference_env.sh` defaults or set:
 
 ```bash
+export MOTIONFORESIGHT_CKPT=$PWD/checkpoints/trainedon_ss100k/best.pt
+export MOTIONFORESIGHT_BASE=$PWD/assets/models_pretrained/trackcraft3r/model.safetensors
+export MODELSCOPE_CACHE=$PWD/assets/models_pretrained/wan_models
+```
+
+SAM3 is only needed when generating masks for new videos. Place the SAM3 checkpoint
+under `assets/` and pass its path to `scripts/comparison/sam3_ood_masks.py`.
+
+## Installation
+
+```bash
+git clone https://github.com/brains-bots-n-behavior/motionforesight.git
+cd motionforesight
+
 git submodule update --init --recursive
+
+python -m venv assets/venv
+source assets/venv/bin/activate
+pip install -U pip
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install -r models_pretrained/requirements.txt
+pip install -e external/sam3
+pip install -e external/depth-anything-3
+pip install opencv-python pillow plotly peft safetensors huggingface_hub hf_transfer viser
 ```
 
-Create and install the environment from the repository root:
+Configure paths before running inference:
 
 ```bash
-. /home/homanga/miniconda3/etc/profile.d/conda.sh  # skip if conda is already initialized
-
-conda create -y -n 3dflow python=3.10 pip
-conda activate 3dflow
-
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install --index-url https://download.pytorch.org/whl/cu130 \
-  torch==2.11.0 torchvision==0.26.0 xformers==0.0.35
-
-python -m pip install -e external/sam3 -e external/depth-anything-3
-python -m pip install --no-build-isolation -e external/TrackCraft3r
-
-python -m pip install \
-  datasets pyarrow yt-dlp huggingface_hub \
-  pycocotools numba python-rapidjson
-
-python -m pip install --force-reinstall \
-  numpy==1.26.4 \
-  opencv-python==4.10.0.84 \
-  opencv-python-headless==4.10.0.84
+export MOTIONFORESIGHT_ENV=$PWD/assets/venv
+source scripts/setup_inference_env.sh
 ```
 
-Apply the local SAM3 compatibility patch after the submodule checkout:
+## Run Inference On The Packaged `.npz` Examples
 
 ```bash
-git -C external/sam3 apply ../../patches/sam3_pytorch_compat.patch
+CUDA_VISIBLE_DEVICES=0 $PY scripts/comparison/build_ood_3d_html_one.py \
+  --checkpoint "$MOTIONFORESIGHT_CKPT" \
+  --base-checkpoint "$MOTIONFORESIGHT_BASE" \
+  --user-dir data/processed7_uniform \
+  --out-dir outputs/viser_3d_html_sam3_broad_dense_pc \
+  --suffix _sam3_broad_dense_pc_3d.html \
+  --grid-stride 2 \
+  --pc-stride 1 \
+  --max-tracks 220 \
+  --rainbow-tracks \
+  --track-count-options 25,50,100,160,220
 ```
 
-Do not re-download model weights if they already exist locally. Point TrackCraft3r at the existing local checkpoint directory:
+Open the generated HTML files in `outputs/viser_3d_html_sam3_broad_dense_pc/` in a
+browser. Increase `--pc-stride` to `2` or `5` for smaller HTML files.
+
+## Preprocess A New Video: Full-Video 7-Frame Context
+
+Use this mode when the entire video should be used as context. The preprocessor
+uniformly samples 7 observed frames from the full video.
 
 ```bash
-export TRACKCRAFT_CHECKPOINTS=/path/to/local/TrackCraft3r/checkpoints
-test -f "$TRACKCRAFT_CHECKPOINTS/trackcraft3r/model.safetensors"
-test -d "$TRACKCRAFT_CHECKPOINTS/wan_models"
+VIDEO_DIR=/path/to/mp4s
+OUT_ROOT=/path/to/output
 
-if [ ! -e external/TrackCraft3r/checkpoints ]; then
-  ln -s "$TRACKCRAFT_CHECKPOINTS" external/TrackCraft3r/checkpoints
-fi
+CUDA_VISIBLE_DEVICES=0 $PY scripts/comparison/preprocess_ood_videos.py \
+  --video-dir "$VIDEO_DIR" \
+  --out-dir "$OUT_ROOT/processed7_uniform" \
+  --num-frames 7 \
+  --sample-mode uniform \
+  --frame-stride 0 \
+  --height 480 \
+  --width 832
 ```
 
-SAM3 and Depth Anything 3 use the local Hugging Face cache when their model files are already present. To make accidental downloads fail loudly, set:
-
-```bash
-export HF_HUB_OFFLINE=1
-export TRANSFORMERS_OFFLINE=1
-```
-
-Check the environment:
-
-```bash
-python -m pip check
-
-python - <<'PY'
-import cv2, numpy, sam3, torch, torchvision
-from depth_anything_3.api import DepthAnything3
-
-print("torch", torch.__version__, "cuda", torch.version.cuda)
-print("torchvision", torchvision.__version__)
-print("cuda available", torch.cuda.is_available(), "devices", torch.cuda.device_count())
-print("numpy", numpy.__version__, "opencv", cv2.__version__)
-print("imports ok")
-PY
-
-python scripts/run_something_sam3_anchor_masks.py --help
-python scripts/run_action100m_trackcraft3r.py --help
-python scripts/run_trackcraft3r_dense_batch.py --help
-```
-
-See [data/README.md](data/README.md) for the Something-Something scaling recipe.
-
-## Data Direction
-
-The first data source is the Action100M preview split. Action100M provides YouTube video IDs plus a hierarchy of temporal action segments. The current local workflow:
-
-1. Fetch Action100M preview annotations for selected videos.
-2. Download the corresponding source videos from YouTube.
-3. Cut mid-level action segments into short MP4 clips.
-4. Build a local HTML viewer for browsing clips before running 3D tracking.
-
-The local working copy produced so far lives under:
+Each `<video_stem>_user.npz` contains:
 
 ```text
-data/action100m/
+rgb                 sampled RGB frames, shape (7,H,W,3)
+depth_map           DA3 z-depth for each sampled frame
+extrinsics_w2c      camera poses normalized to frame 0
+fx_fy_cx_cy         intrinsics at the processed resolution
+frame_indices       raw video frame indices selected uniformly
+images_jpeg_bytes   JPEG frames for compatibility with TrackCraft3r loaders
 ```
 
-The segment viewer currently contains hundreds of short mid-level clips:
+Generate object masks with SAM3. Use broad but concrete prompts such as `cabinet`,
+`box`, `chair`, `trash can`, `pair of shoes`, `paper bag`, or `pans`.
+
+```bash
+SAM3_CHECKPOINT=$PWD/assets/sam3/sam3.pt
+
+CUDA_VISIBLE_DEVICES=0 $PY scripts/comparison/sam3_ood_masks.py \
+  --proc-dir "$OUT_ROOT/processed7_uniform" \
+  --out-dir "$OUT_ROOT/masks_sam3_broad" \
+  --checkpoint "$SAM3_CHECKPOINT" \
+  --prompt video_stem:"box" \
+  --prompt another_video:"cabinet"
+```
+
+Then run `build_ood_3d_html_one.py` with `--user-dir` and `--mask-dir` pointed at
+the new processed clips and masks.
+
+## Optional Full-Video Split Recipe
+
+For long videos where you want explicit context and future segments, use the
+provided runner:
+
+- sample 22 frames total;
+- frames 0..6 are context frames sampled uniformly from the first half of the video;
+- frames 7..21 are future timeline frames sampled uniformly from the second half;
+- only frames 0..6 are fed to the model.
+
+```bash
+VIDEO_DIR=/path/to/full_videos \
+OUT_ROOT=/path/to/eval_outputs \
+PROMPTS_TSV=/path/to/object_prompts.tsv \
+CUDA_VISIBLE_DEVICES=0 \
+PC_STRIDE=1 \
+bash scripts/comparison/run_oodfull_context50_eval.sh
+```
+
+`PROMPTS_TSV` format:
 
 ```text
-data/action100m/segments/viewer/index.html
+video_stem<TAB>object prompt
+example_0001<TAB>oven
+example_0002<TAB>pair of shoes
 ```
 
-See [data/README.md](data/README.md) for reproduction details.
+## Coordinate Frame
 
-## 200-Clip Demo Video
+The predicted 3D tracks are expressed in the last observed camera frame. The HTML
+viewer freezes the background at the last observed frame and draws future object
+trajectories in that coordinate system.
 
-A GIF preview of the 200-video 3D track viewer:
+## Notes
 
-[![200-video 3D track viewer demo](media/200videos_3dtracks.gif)](media/200videos_3dtracks.webm)
-
-[Open the higher-quality WebM directly](media/200videos_3dtracks.webm).
-
-## SAM3 And 3D Tracking
-
-The near-term local pipeline is:
-
-1. Run SAM3 on the first frame of each Action100M segment, using the segment text as the text prompt.
-2. Select clips with a small number of SAM3 masks, typically 1-3 object masks.
-3. Run Depth Anything 3 and TrackCraft3r on the selected segment clips.
-4. Build a projected 2D HTML viewer from the dense 3D tracks.
-5. Package observed-frame inputs and future-frame 3D motion targets for future scene flow experiments.
-
-The model code is tracked as git submodules. After cloning, initialize them with:
-
-```bash
-git submodule update --init --recursive
-```
-
-The scripts expect these local checkouts by default:
-
-- `external/sam3`: SAM3 image model package/checkpoint assets.
-- `external/TrackCraft3r`: dense 3D tracking from monocular video plus depth/camera.
-- `external/depth-anything-3`: depth and camera preprocessing.
-
-Checkpoint and model-cache downloads are still handled by the individual projects/environments. If SAM3 raises PyTorch dtype or `init_state` keyword compatibility errors, apply the local compatibility patch:
-
-```bash
-git -C external/sam3 apply ../../patches/sam3_pytorch_compat.patch
-```
-
-Key repo scripts:
-
-- `scripts/run_action100m_sam3_first_frame_masks.py`: runs SAM3 text-prompt masking on segment first frames.
-- `scripts/prepare_action100m_track_lists.py`: creates resumable TrackCraft video-list shards from the SAM3 manifest.
-- `scripts/run_action100m_trackcraft3r.py`: runs DA3 preprocessing, TrackCraft user NPZ creation, and dense tracking.
-- `scripts/preprocess_da3_chunked.py`: repo-local DA3 preprocessor with chunked inference for long clips.
-- `scripts/run_something_sam3_anchor_masks.py`: creates Something-Something hand-anchored clips and object masks from `train.json` placeholders.
-- `scripts/prepare_something_track_lists.py`: merges sharded Something-Something SAM3 manifests and writes trackable 32-frame GPU lists.
-- `scripts/run_trackcraft3r_dense_batch.py`: runs TrackCraft3r dense inference over many prepared user NPZs with one model load.
-- `scripts/train_future_3d_tracks.py`: trains the first 10-frame future 3D point-track predictor from curated dense tracks.
-- `scripts/render_future_track_prediction_viewer.py`: renders side-by-side GT/pred future-track overlay videos and HTML viewers.
-- `scripts/build_action100m_mask_trace_viewer.py`: builds the projected HTML track viewer.
-- `viewer/action100m_projected_tracks_template.html`: tracked HTML template used by the projected viewer.
-
-See [data/README.md](data/README.md) for exact commands.
-
-## Future Track Prediction
-
-The first trainable baseline lives in `models/future_3d_tracks/`. It reuses the curated TrackCraft3r dense outputs as pseudo-ground-truth but does not edit the TrackCraft3r submodule. For each clip, it samples points inside the SAM3 object mask and trains a model to predict frames 10-31 from only:
-
-1. RGB frames 0-9.
-2. The sampled points' observed 3D positions at frames 0-9.
-3. The points' frame-0 UV coordinates.
-4. Text conditioning from the Something-Something label.
-
-Training entrypoint:
-
-```bash
-python scripts/train_future_3d_tracks.py \
-  --root data/something_something \
-  --tracks-name anchor_tracks32_500 \
-  --manifest sam3_anchor_masks/manifest_500.json \
-  --obs-frames 10 \
-  --total-frames 32 \
-  --num-points 256 \
-  --batch-size 2 \
-  --epochs 20 \
-  --steps-per-epoch 200 \
-  --device cuda \
-  --amp
-```
-
-The initial local smoke-training run used 201 curated dense clips and wrote checkpoints to:
-
-```text
-data/something_something/future_track_training/initial_10f_to_32f/
-```
-
-The training script also supports a text-token AdaLN variant:
-
-```bash
-python scripts/train_future_3d_tracks.py \
-  --model-variant text-adaln \
-  --root data/something_something \
-  --tracks-name anchor_tracks32_500 \
-  --manifest sam3_anchor_masks/manifest_500.json \
-  --obs-frames 10 \
-  --total-frames 32 \
-  --num-points 256 \
-  --batch-size 2 \
-  --epochs 20 \
-  --steps-per-epoch 362 \
-  --device cuda \
-  --amp
-```
+- Keep downloaded checkpoints, base weights, raw videos, and generated HTML files
+  out of git. `.gitignore` is configured for this.
+- The model predicts a dense field, but the released visualizations sample tracks
+  only from the object mask. Off-object motion is not rendered as a prediction.
