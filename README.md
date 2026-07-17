@@ -31,7 +31,7 @@ checkpoints/trainedon_ss100k/best.pt
 checkpoints/trainedon_ss100k/config.json
 ```
 
-Checkpoint download link: `<RELEASE_CHECKPOINT_LINK>`
+Checkpoint download link: ![model](https://drive.google.com/file/d/1isAB_TnNW8gbMlgs5yVnPBKZSR85-JyZ/view?usp=sharing)
 
 The fine-tuned checkpoint is trained on top of TrackCraft3r/Wan2.1, so inference
 also needs the base TrackCraft3r checkpoint and Wan2.1 files. Put those assets
@@ -183,3 +183,22 @@ trajectories in that coordinate system.
   out of git. `.gitignore` is configured for this.
 - The model predicts a dense field, but the released visualizations sample tracks
   only from the object mask. Off-object motion is not rendered as a prediction.
+
+## BibTeX
+
+If you find MotionForesight useful, please cite:
+
+```bibtex
+@article{bharadhwaj2026motionforesight,
+  title={MotionForesight: Re-purposing Video Models for Future 3D Scene-Flow Prediction},
+  author={Homanga Bharadhwaj and Yash Jangir},
+  year={2026}
+}
+```
+
+## Acknowledgements
+
+MotionForesight builds on several open-source models and codebases, including
+**Wan2.1**, **TrackCraft3r**, **SAM 3**, and **Depth Anything 3 (DA3)**. We thank
+their authors and maintainers for making their work publicly available. Please
+consult and cite the corresponding projects when using these components.
