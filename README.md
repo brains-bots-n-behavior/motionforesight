@@ -31,7 +31,7 @@ checkpoints/trainedon_ss100k/best.pt
 checkpoints/trainedon_ss100k/config.json
 ```
 
-Checkpoint download link: ![model](https://drive.google.com/file/d/1isAB_TnNW8gbMlgs5yVnPBKZSR85-JyZ/view?usp=sharing)
+Checkpoint download link: [model](https://drive.google.com/file/d/1isAB_TnNW8gbMlgs5yVnPBKZSR85-JyZ/view?usp=sharing)
 
 The fine-tuned checkpoint is trained on top of TrackCraft3r/Wan2.1, so inference
 also needs the base TrackCraft3r checkpoint and Wan2.1 files. Put those assets
